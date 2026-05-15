@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "Deep-Learning-Terrain-Generator"
+version = "0.1.0"
+description = "A PyTorch neural network for generating realistic terrain using WorldClim data."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Rafał Oszajca", email = "rafaloszajca@student.agh.edu.pl" }
+]
+dependencies = [
+    "torch",
+    "torchvision",
+    "rasterio",
+    "numpy",
+    "matplotlib",
+    "tqdm"
+]
+
+[project.optional-dependencies]
+dev = [
+    "jupyter",
+    "pytest",
+    "black"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
