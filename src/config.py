@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-RESOLUTION = "30s"
+RESOLUTION = "10m"
 
 TILE_SIZE = 256 
 
