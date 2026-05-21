@@ -88,7 +88,7 @@
 
 <div class="viewcode-block" id="compute_gradient_penalty">
 <a class="viewcode-back" href="../../src.html#src.training.compute_gradient_penalty">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">compute_gradient_penalty</span><span class="p">(</span><span class="n">critic</span><span class="p">,</span> <span class="n">real_samples</span><span class="p">,</span> <span class="n">fake_samples</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">compute_gradient_penalty</span><span class="p">(</span><span class="n">critic</span><span class="p">,</span> <span class="n">real_samples</span><span class="p">,</span> <span class="n">fake_samples</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Calculates the gradient penalty for the WGAN-GP to enforce 1-Lipschitz continuity.</span>
 
@@ -107,6 +107,8 @@
     <span class="n">batch_size</span> <span class="o">=</span> <span class="n">real_samples</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
     
     <span class="n">current_device</span> <span class="o">=</span> <span class="n">real_samples</span><span class="o">.</span><span class="n">device</span>
+
+    <span class="n">fake_samples</span> <span class="o">=</span> <span class="n">fake_samples</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
 
     <span class="n">epsilon</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">current_device</span><span class="p">)</span>
     
@@ -169,7 +171,7 @@
                 <span class="n">fake_images</span> <span class="o">=</span> <span class="n">generator</span><span class="p">(</span><span class="n">noise</span><span class="p">)</span>
 
                 <span class="n">critic_real</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">real_images</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-                <span class="n">critic_fake</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">fake_images</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">critic_fake</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">fake_images</span><span class="o">.</span><span class="n">detach</span><span class="p">())</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
 
                 <span class="n">gp</span> <span class="o">=</span> <span class="n">compute_gradient_penalty</span><span class="p">(</span><span class="n">critic</span><span class="p">,</span> <span class="n">real_images</span><span class="p">,</span> <span class="n">fake_images</span><span class="p">)</span>
 
@@ -179,7 +181,7 @@
                 <span class="p">)</span>
 
                 <span class="n">critic</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
-                <span class="n">loss_critic</span><span class="o">.</span><span class="n">backward</span><span class="p">(</span><span class="n">retain_graph</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="n">loss_critic</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
                 <span class="n">opt_critic</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
 
             <span class="n">output</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">fake_images</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
