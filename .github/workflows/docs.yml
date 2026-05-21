@@ -21,15 +21,20 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install sphinx sphinx-rtd-theme torch torchvision rasterio numpy
+        pip install sphinx sphinx-rtd-theme torch torchvision rasterio numpy tqdm
 
     - name: Build Sphinx HTML
       run: |
         sphinx-apidoc -o docs/source/ src/
         make -C docs html
+        
+    - name: Bypass Jekyll on GitHub Pages
+      run: |
+        touch docs/build/html/.nojekyll
 
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./docs/build/html
+        enable_jekyll: false
