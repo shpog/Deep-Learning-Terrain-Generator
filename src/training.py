@@ -32,16 +32,21 @@ def compute_gradient_penalty(critic, real_samples, fake_samples):
         torch.Tensor: A scalar tensor representing the computed gradient penalty.
     """
     batch_size = real_samples.size(0)
-    
     current_device = real_samples.device
-
-    fake_samples = fake_samples.detach()
-
-    epsilon = torch.rand(batch_size, 1, 1, 1, device=current_device)
     
+    fake_samples = fake_samples.detach()
+    
+    epsilon = torch.rand(batch_size, 1, 1, 1, device=current_device)
     interpolated = (epsilon * real_samples + ((1 - epsilon) * fake_samples)).requires_grad_(True)
     
-    critic_interpolated = critic(interpolated)
+    # ==============================================================
+    # THE MULTI-GPU FIX: Bypass DataParallel for the penalty calculation.
+    # DataParallel cannot trace second-order gradients across GPUs.
+    # ==============================================================
+    if isinstance(critic, nn.DataParallel):
+        critic_interpolated = critic.module(interpolated)
+    else:
+        critic_interpolated = critic(interpolated)
     
     gradients = torch.autograd.grad(
         outputs=critic_interpolated,
