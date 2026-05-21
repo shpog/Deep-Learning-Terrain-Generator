@@ -63,9 +63,7 @@ def main():
         generator=generator, 
         critic=critic, 
         dataloader=dataloader, 
-        device=device, 
-        epochs=EPOCHS, 
-        latent_dim=LATENT_DIM
+        device=device
     )
     
     print("\nTraining complete! Saving model weights...")

@@ -40,8 +40,11 @@ class TerrainDataset(Dataset):
         self.epoch_size = epoch_size
         self.filepath = PROCESSED_DATA_DIR / f"worldclim_{RESOLUTION}_full.npy"
         
-        self.data = np.load(self.filepath, mmap_mode='r')
-        self.channels, self.height, self.width = self.data.shape
+        temp_data = np.load(self.filepath, mmap_mode='r')
+        self.channels, self.height, self.width = temp_data.shape
+        del temp_data 
+        
+        self.data = None
 
     def __len__(self):
         """
@@ -67,6 +70,9 @@ class TerrainDataset(Dataset):
         Returns:
             torch.Tensor: A float32 tensor of shape [Channels, TILE_SIZE, TILE_SIZE].
         """
+        if self.data is None:
+            self.data = np.load(self.filepath, mmap_mode='r')
+
         while True:
             y = np.random.randint(0, self.height - TILE_SIZE)
             x = np.random.randint(0, self.width - TILE_SIZE)
@@ -76,8 +82,7 @@ class TerrainDataset(Dataset):
             if np.max(patch_numpy[0]) > 0.0:
                 break
                 
-        patch_tensor = torch.from_numpy(np.array(patch_numpy)).float()
-        
+        patch_tensor = torch.from_numpy(np.array(patch_numpy).copy()).float()
         return patch_tensor
 
 def get_dataloader(batch_size=32, num_workers=0):

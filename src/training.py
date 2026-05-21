@@ -15,7 +15,7 @@ from config import (
     LEARNING_RATE, BETA1, BETA2, CRITIC_ITERATIONS, LAMBDA_GP, LATENT_DIM
 )
 
-def compute_gradient_penalty(critic, real_samples, fake_samples, device):
+def compute_gradient_penalty(critic, real_samples, fake_samples):
     """
     Calculates the gradient penalty for the WGAN-GP to enforce 1-Lipschitz continuity.
 
@@ -34,6 +34,8 @@ def compute_gradient_penalty(critic, real_samples, fake_samples, device):
     batch_size = real_samples.size(0)
     
     current_device = real_samples.device
+
+    fake_samples = fake_samples.detach()
 
     epsilon = torch.rand(batch_size, 1, 1, 1, device=current_device)
     
@@ -93,7 +95,7 @@ def train_wgan(generator, critic, dataloader, device):
                 fake_images = generator(noise)
 
                 critic_real = critic(real_images).reshape(-1)
-                critic_fake = critic(fake_images).reshape(-1)
+                critic_fake = critic(fake_images.detach()).reshape(-1)
 
                 gp = compute_gradient_penalty(critic, real_images, fake_images)
 
@@ -103,7 +105,7 @@ def train_wgan(generator, critic, dataloader, device):
                 )
 
                 critic.zero_grad()
-                loss_critic.backward(retain_graph=True)
+                loss_critic.backward()
                 opt_critic.step()
 
             output = critic(fake_images).reshape(-1)
