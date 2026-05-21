@@ -46,14 +46,36 @@
 <li class="toctree-l1 current"><a class="reference internal" href="modules.html">src</a><ul class="current">
 <li class="toctree-l2 current"><a class="current reference internal" href="#">src package</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#submodules">Submodules</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#src-config-module">src.config module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#src-dataset-module">src.dataset module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#src-main-module">src.main module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#src-model-module">src.model module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#src-preprocessing-module">src.preprocessing module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#src-training-module">src.training module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#src-utils-module">src.utils module</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#module-contents">Module contents</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#module-src.config">src.config module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#module-src.dataset">src.dataset module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#src.dataset.TerrainDataset"><code class="docutils literal notranslate"><span class="pre">TerrainDataset</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#src.dataset.get_dataloader"><code class="docutils literal notranslate"><span class="pre">get_dataloader()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-src.main">src.main module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#src.main.main"><code class="docutils literal notranslate"><span class="pre">main()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-src.model">src.model module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#src.model.TerrainCritic"><code class="docutils literal notranslate"><span class="pre">TerrainCritic</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#src.model.TerrainGenerator"><code class="docutils literal notranslate"><span class="pre">TerrainGenerator</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#src.model.initialize_weights"><code class="docutils literal notranslate"><span class="pre">initialize_weights()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-src.preprocessing">src.preprocessing module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#src.preprocessing.aggregate_monthly_data"><code class="docutils literal notranslate"><span class="pre">aggregate_monthly_data()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#src.preprocessing.clean_and_normalize"><code class="docutils literal notranslate"><span class="pre">clean_and_normalize()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#src.preprocessing.create_terrain_tensor"><code class="docutils literal notranslate"><span class="pre">create_terrain_tensor()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#src.preprocessing.load_geotiff"><code class="docutils literal notranslate"><span class="pre">load_geotiff()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-src.training">src.training module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#src.training.compute_gradient_penalty"><code class="docutils literal notranslate"><span class="pre">compute_gradient_penalty()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#src.training.train_wgan"><code class="docutils literal notranslate"><span class="pre">train_wgan()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-src.utils">src.utils module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#module-src">Module contents</a></li>
 </ul>
 </li>
 </ul>
@@ -90,29 +112,421 @@
 <section id="submodules">
 <h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading"></a></h2>
 </section>
-<section id="src-config-module">
-<h2>src.config module<a class="headerlink" href="#src-config-module" title="Link to this heading"></a></h2>
+<section id="module-src.config">
+<span id="src-config-module"></span><h2>src.config module<a class="headerlink" href="#module-src.config" title="Link to this heading"></a></h2>
+<p>Global Configuration and Hyperparameters.</p>
+<p>This module acts as the single source of truth for all file paths,
+dataset resolutions, and neural network hyperparameters used across
+the Terrain Generator project. Modifying values here will automatically
+propagate through the preprocessing, dataset, and training pipelines.</p>
 </section>
-<section id="src-dataset-module">
-<h2>src.dataset module<a class="headerlink" href="#src-dataset-module" title="Link to this heading"></a></h2>
+<section id="module-src.dataset">
+<span id="src-dataset-module"></span><h2>src.dataset module<a class="headerlink" href="#module-src.dataset" title="Link to this heading"></a></h2>
+<p>Dataset and DataLoader definitions for the Terrain Generator.</p>
+<p>This module provides the PyTorch Dataset interface to stream training patches
+directly from the massive memory-mapped .npy file on the hard drive, ensuring
+local RAM is not overwhelmed during training.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.dataset.TerrainDataset">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.dataset.</span></span><span class="sig-name descname"><span class="pre">TerrainDataset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">epoch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10000</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/dataset.html#TerrainDataset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dataset.TerrainDataset" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Dataset</span></code></p>
+<p>A PyTorch Dataset that randomly crops tiles from a global terrain map.</p>
+<p>Because the dataset consists of a single massive continuous image rather
+than thousands of separate files, this dataset ignores standard indexing
+and instead returns a random geographical crop upon every fetch.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.dataset.TerrainDataset.epoch_size">
+<span class="sig-name descname"><span class="pre">epoch_size</span></span><a class="headerlink" href="#src.dataset.TerrainDataset.epoch_size" title="Link to this definition"></a></dt>
+<dd><p>The number of patches that define one full training epoch.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.dataset.TerrainDataset.filepath">
+<span class="sig-name descname"><span class="pre">filepath</span></span><a class="headerlink" href="#src.dataset.TerrainDataset.filepath" title="Link to this definition"></a></dt>
+<dd><p>The path to the processed .npy data file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pathlib.Path</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.dataset.TerrainDataset.data">
+<span class="sig-name descname"><span class="pre">data</span></span><a class="headerlink" href="#src.dataset.TerrainDataset.data" title="Link to this definition"></a></dt>
+<dd><p>The memory-mapped global terrain array.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>numpy.memmap</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.dataset.TerrainDataset.channels">
+<span class="sig-name descname"><span class="pre">channels</span></span><a class="headerlink" href="#src.dataset.TerrainDataset.channels" title="Link to this definition"></a></dt>
+<dd><p>Number of data channels (e.g., 3).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.dataset.TerrainDataset.height">
+<span class="sig-name descname"><span class="pre">height</span></span><a class="headerlink" href="#src.dataset.TerrainDataset.height" title="Link to this definition"></a></dt>
+<dd><p>Total pixel height of the global map.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.dataset.TerrainDataset.width">
+<span class="sig-name descname"><span class="pre">width</span></span><a class="headerlink" href="#src.dataset.TerrainDataset.width" title="Link to this definition"></a></dt>
+<dd><p>Total pixel width of the global map.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.dataset.get_dataloader">
+<span class="sig-prename descclassname"><span class="pre">src.dataset.</span></span><span class="sig-name descname"><span class="pre">get_dataloader</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">32</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/dataset.html#get_dataloader"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.dataset.get_dataloader" title="Link to this definition"></a></dt>
+<dd><p>Creates the PyTorch DataLoader for the TerrainDataset.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>batch_size</strong> (<em>int</em><em>, </em><em>optional</em>) – Number of patches per batch. Defaults to 32.</p></li>
+<li><p><strong>num_workers</strong> (<em>int</em><em>, </em><em>optional</em>) – Subprocesses to use for data loading.
+On multi-GPU clusters, higher values (e.g., 4 or 8) speed up fetching.
+Defaults to 0.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The configured PyTorch DataLoader.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>torch.utils.data.DataLoader</p>
+</dd>
+</dl>
+</dd></dl>
+
 </section>
-<section id="src-main-module">
-<h2>src.main module<a class="headerlink" href="#src-main-module" title="Link to this heading"></a></h2>
+<section id="module-src.main">
+<span id="src-main-module"></span><h2>src.main module<a class="headerlink" href="#module-src.main" title="Link to this heading"></a></h2>
+<p>Execution Entry Point for Terrain Generation Training.</p>
+<p>This script ties together the dataset loaders, the neural network models,
+and the WGAN-GP training loop. It handles hardware detection (including
+multi-GPU cluster scaling via DataParallel) and saves the final weights.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="src.main.main">
+<span class="sig-prename descclassname"><span class="pre">src.main.</span></span><span class="sig-name descname"><span class="pre">main</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/main.html#main"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.main.main" title="Link to this definition"></a></dt>
+<dd><p>Initializes hardware, models, and begins the training loop.</p>
+<dl class="simple">
+<dt>Workflow:</dt><dd><ol class="arabic simple">
+<li><p>Detects available GPUs and initializes CUDA if available.</p></li>
+<li><p>Loads the memory-mapped TerrainDataset via a multiprocessing DataLoader.</p></li>
+<li><p>Initializes the Generator and Critic networks.</p></li>
+<li><p>Wraps models in torch.nn.DataParallel if &gt;1 GPU is detected.</p></li>
+<li><p>Executes the WGAN-GP training loop for the specified number of epochs.</p></li>
+<li><p>Safely unwraps and saves the final model weights to the disk.</p></li>
+</ol>
+</dd>
+</dl>
+</dd></dl>
+
 </section>
-<section id="src-model-module">
-<h2>src.model module<a class="headerlink" href="#src-model-module" title="Link to this heading"></a></h2>
+<section id="module-src.model">
+<span id="src-model-module"></span><h2>src.model module<a class="headerlink" href="#module-src.model" title="Link to this heading"></a></h2>
+<p>Neural Network Architectures for Terrain Generation.</p>
+<p>This module defines the PyTorch modules for the Wasserstein GAN with
+Gradient Penalty (WGAN-GP). It includes the Generator (which upsamples
+noise into terrain maps) and the Critic (which scores the realism of maps).</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.model.TerrainCritic">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.model.</span></span><span class="sig-name descname"><span class="pre">TerrainCritic</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">img_channels</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/model.html#TerrainCritic"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.model.TerrainCritic" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></p>
+<p>The Critic (Discriminator) network for the WGAN-GP.</p>
+<p>Unlike a standard GAN, the Critic outputs an unbounded real number
+representing the Wasserstein distance, rather than a probability between 0 and 1.
+It uses InstanceNorm2d instead of BatchNorm2d to remain compatible
+with the gradient penalty.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.model.TerrainCritic.model">
+<span class="sig-name descname"><span class="pre">model</span></span><a class="headerlink" href="#src.model.TerrainCritic.model" title="Link to this definition"></a></dt>
+<dd><p>The sequential block of neural network layers.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>torch.nn.Sequential</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.model.TerrainCritic.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/model.html#TerrainCritic.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.model.TerrainCritic.forward" title="Link to this definition"></a></dt>
+<dd><p>Executes the forward pass of the Critic.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>x</strong> (<em>torch.Tensor</em>) – Image tensor of shape [Batch, img_channels, 256, 256].</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A raw scalar score of shape [Batch, 1, 1, 1].</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>torch.Tensor</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="src.model.TerrainGenerator">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src.model.</span></span><span class="sig-name descname"><span class="pre">TerrainGenerator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">latent_dim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">128</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">img_channels</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/model.html#TerrainGenerator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.model.TerrainGenerator" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></p>
+<p>The Generator network for the WGAN-GP.</p>
+<p>Takes a latent noise vector and progressively upsamples it through
+transposed convolutional layers to output a 3-channel image
+(Elevation, Precipitation, Temperature) normalized between [0, 1].</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.model.TerrainGenerator.latent_dim">
+<span class="sig-name descname"><span class="pre">latent_dim</span></span><a class="headerlink" href="#src.model.TerrainGenerator.latent_dim" title="Link to this definition"></a></dt>
+<dd><p>The size of the input noise vector.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.model.TerrainGenerator.model">
+<span class="sig-name descname"><span class="pre">model</span></span><a class="headerlink" href="#src.model.TerrainGenerator.model" title="Link to this definition"></a></dt>
+<dd><p>The sequential block of neural network layers.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>torch.nn.Sequential</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.model.TerrainGenerator.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/model.html#TerrainGenerator.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.model.TerrainGenerator.forward" title="Link to this definition"></a></dt>
+<dd><p>Executes the forward pass of the Generator.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>x</strong> (<em>torch.Tensor</em>) – A noise tensor of shape [Batch, latent_dim, 1, 1].</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Generated terrain image of shape [Batch, img_channels, 256, 256].</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>torch.Tensor</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.model.initialize_weights">
+<span class="sig-prename descclassname"><span class="pre">src.model.</span></span><span class="sig-name descname"><span class="pre">initialize_weights</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/model.html#initialize_weights"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.model.initialize_weights" title="Link to this definition"></a></dt>
+<dd><p>Initializes the network weights according to a normal distribution.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>model</strong> (<em>torch.nn.Module</em>) – The PyTorch neural network module to initialize.</p>
+</dd>
+</dl>
+</dd></dl>
+
 </section>
-<section id="src-preprocessing-module">
-<h2>src.preprocessing module<a class="headerlink" href="#src-preprocessing-module" title="Link to this heading"></a></h2>
+<section id="module-src.preprocessing">
+<span id="src-preprocessing-module"></span><h2>src.preprocessing module<a class="headerlink" href="#module-src.preprocessing" title="Link to this heading"></a></h2>
+<p>Preprocessing Data Pipeline for Terrain Generation.</p>
+<p>This module handles the extraction, alignment, aggregation, and normalization
+of high-resolution GeoTIFF files from WorldClim. It is optimized to process
+massive global datasets (up to 30s resolution) iteratively to prevent memory
+overflow, outputting a memory-mapped NumPy array for training.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="src.preprocessing.aggregate_monthly_data">
+<span class="sig-prename descclassname"><span class="pre">src.preprocessing.</span></span><span class="sig-name descname"><span class="pre">aggregate_monthly_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_pattern</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">operation</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'sum'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/preprocessing.html#aggregate_monthly_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.preprocessing.aggregate_monthly_data" title="Link to this definition"></a></dt>
+<dd><p>Aggregates 12 monthly climate files into a single annual array.</p>
+<p>This function operates iteratively. It loads one file, applies it to a
+running total, and deletes it from memory before loading the next.
+This prevents RAM overflow on 30s global datasets.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>file_pattern</strong> (<em>str</em>) – The glob pattern to match the 12 monthly files.</p></li>
+<li><p><strong>operation</strong> (<em>str</em><em>, </em><em>optional</em>) – The aggregation method to use.
+Accepts ‘sum’ (for precipitation) or ‘mean’ (for temperature).
+Defaults to ‘sum’.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>FileNotFoundError</strong> – If no files match the provided file_pattern.</p>
+</dd>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><dl class="simple">
+<dt>A tuple containing:</dt><dd><ul class="simple">
+<li><p>numpy.ndarray: The aggregated 2D array.</p></li>
+<li><p>float: The NoData value used in the dataset.</p></li>
+</ul>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>tuple</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.preprocessing.clean_and_normalize">
+<span class="sig-prename descclassname"><span class="pre">src.preprocessing.</span></span><span class="sig-name descname"><span class="pre">clean_and_normalize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">array</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nodata_val</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fill_value</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/preprocessing.html#clean_and_normalize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.preprocessing.clean_and_normalize" title="Link to this definition"></a></dt>
+<dd><p>Isolates valid data, normalizes it to [0, 1], and fills NoData gaps.</p>
+<p>It is crucial to calculate the min/max ONLY on valid data, otherwise
+the NoData values (e.g., -9999) will distort the scaling.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>array</strong> (<em>numpy.ndarray</em>) – The raw 2D input array.</p></li>
+<li><p><strong>nodata_val</strong> (<em>float</em>) – The value representing missing data/oceans.</p></li>
+<li><p><strong>fill_value</strong> (<em>float</em><em>, </em><em>optional</em>) – The value to replace NoData with. Defaults to 0.0.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A normalized 2D array.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>numpy.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.preprocessing.create_terrain_tensor">
+<span class="sig-prename descclassname"><span class="pre">src.preprocessing.</span></span><span class="sig-name descname"><span class="pre">create_terrain_tensor</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/preprocessing.html#create_terrain_tensor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.preprocessing.create_terrain_tensor" title="Link to this definition"></a></dt>
+<dd><p>Executes the full pipeline to load, aggregate, clean, and stack WorldClim data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A 3D array of shape [3, Height, Width] representing
+Elevation, Precipitation, and Temperature.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>numpy.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.preprocessing.load_geotiff">
+<span class="sig-prename descclassname"><span class="pre">src.preprocessing.</span></span><span class="sig-name descname"><span class="pre">load_geotiff</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_path</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/preprocessing.html#load_geotiff"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.preprocessing.load_geotiff" title="Link to this definition"></a></dt>
+<dd><p>Reads a single GeoTIFF file and extracts the 2D array and NoData value.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>file_path</strong> (<em>str</em><em> or </em><em>pathlib.Path</em>) – The absolute or relative path to the .tif file.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>A tuple containing:</dt><dd><ul class="simple">
+<li><p>numpy.ndarray: The 2D array of the raster data.</p></li>
+<li><p>float: The specific NoData value used in this raster.</p></li>
+</ul>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>tuple</p>
+</dd>
+</dl>
+</dd></dl>
+
 </section>
-<section id="src-training-module">
-<h2>src.training module<a class="headerlink" href="#src-training-module" title="Link to this heading"></a></h2>
+<section id="module-src.training">
+<span id="src-training-module"></span><h2>src.training module<a class="headerlink" href="#module-src.training" title="Link to this heading"></a></h2>
+<p>Training Loop and Optimization Logic for WGAN-GP.</p>
+<p>This module contains the core algorithms required to train the Terrain Generator.
+It handles the alternating optimization between the Critic and Generator, and
+computes the mathematically strict Gradient Penalty required for Wasserstein GANs.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="src.training.compute_gradient_penalty">
+<span class="sig-prename descclassname"><span class="pre">src.training.</span></span><span class="sig-name descname"><span class="pre">compute_gradient_penalty</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">critic</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">real_samples</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fake_samples</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/training.html#compute_gradient_penalty"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.compute_gradient_penalty" title="Link to this definition"></a></dt>
+<dd><p>Calculates the gradient penalty for the WGAN-GP to enforce 1-Lipschitz continuity.</p>
+<p>The penalty ensures the gradient of the Critic’s output with respect to the
+input image has a norm (magnitude) of roughly 1.0. This stabilizes training
+and prevents mode collapse.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>critic</strong> (<em>torch.nn.Module</em>) – The initialized Critic network.</p></li>
+<li><p><strong>real_samples</strong> (<em>torch.Tensor</em>) – A batch of real terrain maps.</p></li>
+<li><p><strong>fake_samples</strong> (<em>torch.Tensor</em>) – A batch of generated fake terrain maps.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A scalar tensor representing the computed gradient penalty.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>torch.Tensor</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.training.train_wgan">
+<span class="sig-prename descclassname"><span class="pre">src.training.</span></span><span class="sig-name descname"><span class="pre">train_wgan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">generator</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">critic</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dataloader</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/src/training.html#train_wgan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.training.train_wgan" title="Link to this definition"></a></dt>
+<dd><p>Executes the main WGAN-GP training loop.</p>
+<p>The loop strictly follows the WGAN rule of updating the Critic multiple
+times (defined by CRITIC_ITERATIONS) for every single Generator update.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>generator</strong> (<em>torch.nn.Module</em>) – The initialized TerrainGenerator network.</p></li>
+<li><p><strong>critic</strong> (<em>torch.nn.Module</em>) – The initialized TerrainCritic network.</p></li>
+<li><p><strong>dataloader</strong> (<em>torch.utils.data.DataLoader</em>) – The DataLoader providing real terrain patches.</p></li>
+<li><p><strong>device</strong> (<em>torch.device</em>) – The primary computation device (e.g., ‘cuda’ or ‘cpu’).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>A tuple containing the fully trained networks:</dt><dd><ul class="simple">
+<li><p>torch.nn.Module: The updated Generator.</p></li>
+<li><p>torch.nn.Module: The updated Critic.</p></li>
+</ul>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>tuple</p>
+</dd>
+</dl>
+</dd></dl>
+
 </section>
-<section id="src-utils-module">
-<h2>src.utils module<a class="headerlink" href="#src-utils-module" title="Link to this heading"></a></h2>
+<section id="module-src.utils">
+<span id="src-utils-module"></span><h2>src.utils module<a class="headerlink" href="#module-src.utils" title="Link to this heading"></a></h2>
 </section>
-<section id="module-contents">
-<h2>Module contents<a class="headerlink" href="#module-contents" title="Link to this heading"></a></h2>
+<section id="module-src">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-src" title="Link to this heading"></a></h2>
 </section>
 </section>
 

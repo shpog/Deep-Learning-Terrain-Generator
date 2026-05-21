@@ -1,0 +1,230 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.training &mdash; Terrain Generation 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            Terrain Generation
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">src</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">Terrain Generation</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">src.training</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.training</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Training Loop and Optimization Logic for WGAN-GP.</span>
+
+<span class="sd">This module contains the core algorithms required to train the Terrain Generator.</span>
+<span class="sd">It handles the alternating optimization between the Critic and Generator, and </span>
+<span class="sd">computes the mathematically strict Gradient Penalty required for Wasserstein GANs.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.optim</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">optim</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tqdm</span><span class="w"> </span><span class="kn">import</span> <span class="n">tqdm</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">config</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">LEARNING_RATE</span><span class="p">,</span> <span class="n">BETA1</span><span class="p">,</span> <span class="n">BETA2</span><span class="p">,</span> <span class="n">CRITIC_ITERATIONS</span><span class="p">,</span> <span class="n">LAMBDA_GP</span><span class="p">,</span> <span class="n">LATENT_DIM</span>
+<span class="p">)</span>
+
+<div class="viewcode-block" id="compute_gradient_penalty">
+<a class="viewcode-back" href="../../src.html#src.training.compute_gradient_penalty">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">compute_gradient_penalty</span><span class="p">(</span><span class="n">critic</span><span class="p">,</span> <span class="n">real_samples</span><span class="p">,</span> <span class="n">fake_samples</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Calculates the gradient penalty for the WGAN-GP to enforce 1-Lipschitz continuity.</span>
+
+<span class="sd">    The penalty ensures the gradient of the Critic&#39;s output with respect to the </span>
+<span class="sd">    input image has a norm (magnitude) of roughly 1.0. This stabilizes training </span>
+<span class="sd">    and prevents mode collapse.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        critic (torch.nn.Module): The initialized Critic network.</span>
+<span class="sd">        real_samples (torch.Tensor): A batch of real terrain maps.</span>
+<span class="sd">        fake_samples (torch.Tensor): A batch of generated fake terrain maps.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        torch.Tensor: A scalar tensor representing the computed gradient penalty.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">batch_size</span> <span class="o">=</span> <span class="n">real_samples</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+    
+    <span class="n">current_device</span> <span class="o">=</span> <span class="n">real_samples</span><span class="o">.</span><span class="n">device</span>
+
+    <span class="n">epsilon</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">current_device</span><span class="p">)</span>
+    
+    <span class="n">interpolated</span> <span class="o">=</span> <span class="p">(</span><span class="n">epsilon</span> <span class="o">*</span> <span class="n">real_samples</span> <span class="o">+</span> <span class="p">((</span><span class="mi">1</span> <span class="o">-</span> <span class="n">epsilon</span><span class="p">)</span> <span class="o">*</span> <span class="n">fake_samples</span><span class="p">))</span><span class="o">.</span><span class="n">requires_grad_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+    
+    <span class="n">critic_interpolated</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">interpolated</span><span class="p">)</span>
+    
+    <span class="n">gradients</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">grad</span><span class="p">(</span>
+        <span class="n">outputs</span><span class="o">=</span><span class="n">critic_interpolated</span><span class="p">,</span>
+        <span class="n">inputs</span><span class="o">=</span><span class="n">interpolated</span><span class="p">,</span>
+        <span class="n">grad_outputs</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">critic_interpolated</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">current_device</span><span class="p">),</span>
+        <span class="n">create_graph</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">retain_graph</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">only_inputs</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+    
+    <span class="n">gradients</span> <span class="o">=</span> <span class="n">gradients</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">gradient_norm</span> <span class="o">=</span> <span class="n">gradients</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">gradient_penalty</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">((</span><span class="n">gradient_norm</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+    
+    <span class="k">return</span> <span class="n">gradient_penalty</span></div>
+
+
+<div class="viewcode-block" id="train_wgan">
+<a class="viewcode-back" href="../../src.html#src.training.train_wgan">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">train_wgan</span><span class="p">(</span><span class="n">generator</span><span class="p">,</span> <span class="n">critic</span><span class="p">,</span> <span class="n">dataloader</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Executes the main WGAN-GP training loop.</span>
+
+<span class="sd">    The loop strictly follows the WGAN rule of updating the Critic multiple </span>
+<span class="sd">    times (defined by CRITIC_ITERATIONS) for every single Generator update. </span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        generator (torch.nn.Module): The initialized TerrainGenerator network.</span>
+<span class="sd">        critic (torch.nn.Module): The initialized TerrainCritic network.</span>
+<span class="sd">        dataloader (torch.utils.data.DataLoader): The DataLoader providing real terrain patches.</span>
+<span class="sd">        device (torch.device): The primary computation device (e.g., &#39;cuda&#39; or &#39;cpu&#39;).</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        tuple: A tuple containing the fully trained networks:</span>
+<span class="sd">            - torch.nn.Module: The updated Generator.</span>
+<span class="sd">            - torch.nn.Module: The updated Critic.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">opt_gen</span> <span class="o">=</span> <span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">generator</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">LEARNING_RATE</span><span class="p">,</span> <span class="n">betas</span><span class="o">=</span><span class="p">(</span><span class="n">BETA1</span><span class="p">,</span> <span class="n">BETA2</span><span class="p">))</span>
+    <span class="n">opt_critic</span> <span class="o">=</span> <span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">critic</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">LEARNING_RATE</span><span class="p">,</span> <span class="n">betas</span><span class="o">=</span><span class="p">(</span><span class="n">BETA1</span><span class="p">,</span> <span class="n">BETA2</span><span class="p">))</span>
+
+    <span class="n">generator</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+    <span class="n">critic</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+
+    <span class="kn">from</span><span class="w"> </span><span class="nn">config</span><span class="w"> </span><span class="kn">import</span> <span class="n">EPOCHS</span> 
+
+    <span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">EPOCHS</span><span class="p">):</span>
+        <span class="n">loop</span> <span class="o">=</span> <span class="n">tqdm</span><span class="p">(</span><span class="n">dataloader</span><span class="p">,</span> <span class="n">leave</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">batch_idx</span><span class="p">,</span> <span class="n">real_images</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">loop</span><span class="p">):</span>
+            <span class="n">real_images</span> <span class="o">=</span> <span class="n">real_images</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+            <span class="n">batch_size</span> <span class="o">=</span> <span class="n">real_images</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">CRITIC_ITERATIONS</span><span class="p">):</span>
+                <span class="n">noise</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="n">LATENT_DIM</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+                <span class="n">fake_images</span> <span class="o">=</span> <span class="n">generator</span><span class="p">(</span><span class="n">noise</span><span class="p">)</span>
+
+                <span class="n">critic_real</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">real_images</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">critic_fake</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">fake_images</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+                <span class="n">gp</span> <span class="o">=</span> <span class="n">compute_gradient_penalty</span><span class="p">(</span><span class="n">critic</span><span class="p">,</span> <span class="n">real_images</span><span class="p">,</span> <span class="n">fake_images</span><span class="p">)</span>
+
+                <span class="n">loss_critic</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="o">-</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">critic_real</span><span class="p">)</span> <span class="o">-</span> <span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">critic_fake</span><span class="p">))</span> 
+                    <span class="o">+</span> <span class="n">LAMBDA_GP</span> <span class="o">*</span> <span class="n">gp</span>
+                <span class="p">)</span>
+
+                <span class="n">critic</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+                <span class="n">loss_critic</span><span class="o">.</span><span class="n">backward</span><span class="p">(</span><span class="n">retain_graph</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="n">opt_critic</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+
+            <span class="n">output</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">fake_images</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">loss_gen</span> <span class="o">=</span> <span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+
+            <span class="n">generator</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+            <span class="n">loss_gen</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+            <span class="n">opt_gen</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+
+            <span class="k">if</span> <span class="n">batch_idx</span> <span class="o">%</span> <span class="mi">50</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">loop</span><span class="o">.</span><span class="n">set_description</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Epoch [</span><span class="si">{</span><span class="n">epoch</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">EPOCHS</span><span class="si">}</span><span class="s2">]&quot;</span><span class="p">)</span>
+                <span class="n">loop</span><span class="o">.</span><span class="n">set_postfix</span><span class="p">(</span>
+                    <span class="n">Loss_Critic</span><span class="o">=</span><span class="n">loss_critic</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> 
+                    <span class="n">Loss_Gen</span><span class="o">=</span><span class="n">loss_gen</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+                <span class="p">)</span>
+                
+    <span class="k">return</span> <span class="n">generator</span><span class="p">,</span> <span class="n">critic</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Rafal Oszajca, Radoslaw Iskra.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

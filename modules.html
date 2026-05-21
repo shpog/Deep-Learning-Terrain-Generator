@@ -80,14 +80,53 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="src.html">src package</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="src.html#submodules">Submodules</a></li>
-<li class="toctree-l2"><a class="reference internal" href="src.html#src-config-module">src.config module</a></li>
-<li class="toctree-l2"><a class="reference internal" href="src.html#src-dataset-module">src.dataset module</a></li>
-<li class="toctree-l2"><a class="reference internal" href="src.html#src-main-module">src.main module</a></li>
-<li class="toctree-l2"><a class="reference internal" href="src.html#src-model-module">src.model module</a></li>
-<li class="toctree-l2"><a class="reference internal" href="src.html#src-preprocessing-module">src.preprocessing module</a></li>
-<li class="toctree-l2"><a class="reference internal" href="src.html#src-training-module">src.training module</a></li>
-<li class="toctree-l2"><a class="reference internal" href="src.html#src-utils-module">src.utils module</a></li>
-<li class="toctree-l2"><a class="reference internal" href="src.html#module-contents">Module contents</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.html#module-src.config">src.config module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.html#module-src.dataset">src.dataset module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="src.html#src.dataset.TerrainDataset"><code class="docutils literal notranslate"><span class="pre">TerrainDataset</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="src.html#src.dataset.TerrainDataset.epoch_size"><code class="docutils literal notranslate"><span class="pre">TerrainDataset.epoch_size</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="src.html#src.dataset.TerrainDataset.filepath"><code class="docutils literal notranslate"><span class="pre">TerrainDataset.filepath</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="src.html#src.dataset.TerrainDataset.data"><code class="docutils literal notranslate"><span class="pre">TerrainDataset.data</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="src.html#src.dataset.TerrainDataset.channels"><code class="docutils literal notranslate"><span class="pre">TerrainDataset.channels</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="src.html#src.dataset.TerrainDataset.height"><code class="docutils literal notranslate"><span class="pre">TerrainDataset.height</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="src.html#src.dataset.TerrainDataset.width"><code class="docutils literal notranslate"><span class="pre">TerrainDataset.width</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="src.html#src.dataset.get_dataloader"><code class="docutils literal notranslate"><span class="pre">get_dataloader()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="src.html#module-src.main">src.main module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="src.html#src.main.main"><code class="docutils literal notranslate"><span class="pre">main()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="src.html#module-src.model">src.model module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="src.html#src.model.TerrainCritic"><code class="docutils literal notranslate"><span class="pre">TerrainCritic</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="src.html#src.model.TerrainCritic.model"><code class="docutils literal notranslate"><span class="pre">TerrainCritic.model</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="src.html#src.model.TerrainCritic.forward"><code class="docutils literal notranslate"><span class="pre">TerrainCritic.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="src.html#src.model.TerrainGenerator"><code class="docutils literal notranslate"><span class="pre">TerrainGenerator</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="src.html#src.model.TerrainGenerator.latent_dim"><code class="docutils literal notranslate"><span class="pre">TerrainGenerator.latent_dim</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="src.html#src.model.TerrainGenerator.model"><code class="docutils literal notranslate"><span class="pre">TerrainGenerator.model</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="src.html#src.model.TerrainGenerator.forward"><code class="docutils literal notranslate"><span class="pre">TerrainGenerator.forward()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="src.html#src.model.initialize_weights"><code class="docutils literal notranslate"><span class="pre">initialize_weights()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="src.html#module-src.preprocessing">src.preprocessing module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="src.html#src.preprocessing.aggregate_monthly_data"><code class="docutils literal notranslate"><span class="pre">aggregate_monthly_data()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="src.html#src.preprocessing.clean_and_normalize"><code class="docutils literal notranslate"><span class="pre">clean_and_normalize()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="src.html#src.preprocessing.create_terrain_tensor"><code class="docutils literal notranslate"><span class="pre">create_terrain_tensor()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="src.html#src.preprocessing.load_geotiff"><code class="docutils literal notranslate"><span class="pre">load_geotiff()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="src.html#module-src.training">src.training module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="src.html#src.training.compute_gradient_penalty"><code class="docutils literal notranslate"><span class="pre">compute_gradient_penalty()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="src.html#src.training.train_wgan"><code class="docutils literal notranslate"><span class="pre">train_wgan()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="src.html#module-src.utils">src.utils module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="src.html#module-src">Module contents</a></li>
 </ul>
 </li>
 </ul>
