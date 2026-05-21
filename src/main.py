@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import os
 from pathlib import Path
 
@@ -6,26 +7,39 @@ from dataset import get_dataloader
 from model import TerrainGenerator, TerrainCritic, initialize_weights
 from training import train_wgan
 
+from config import (
+    BATCH_SIZE, EPOCHS, LATENT_DIM, IMG_CHANNELS, MODELS_DIR
+)
+
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"--- Terrain Generator AI ---")
-    print(f"Using device: {device}")
+    gpu_count = torch.cuda.device_count()
 
-    BATCH_SIZE = 32 
-    EPOCHS = 100
-    LATENT_DIM = 128
-    
+    print(f"--- Terrain Generator AI ---")
+    print(f"Using device: {device} with {gpu_count} GPU(s)")
+
     print("\nInitializing DataLoader...")
-    dataloader = get_dataloader(batch_size=BATCH_SIZE, num_workers=0)
+    dataloader = get_dataloader(batch_size=BATCH_SIZE, num_workers=4) 
     
     print("Initializing Generator and Critic...")
-    generator = TerrainGenerator(latent_dim=LATENT_DIM, img_channels=3).to(device)
-    critic = TerrainCritic(img_channels=3).to(device)
+    generator = TerrainGenerator(latent_dim=LATENT_DIM, img_channels=IMG_CHANNELS)
+    critic = TerrainCritic(img_channels=IMG_CHANNELS)
     
     initialize_weights(generator)
     initialize_weights(critic)
     
-    print("\nStarting WGAN-GP Training...")
+    if gpu_count > 1:
+        print(f"Activating DataParallel across {gpu_count} GPUs!")
+        generator = nn.DataParallel(generator)
+        critic = nn.DataParallel(critic)
+        
+    generator = generator.to(device)
+    critic = critic.to(device)
+    
+    initialize_weights(generator)
+    initialize_weights(critic)
+    
+    print(f"\nStarting WGAN-GP Training for {EPOCHS} Epochs...")
     generator, critic = train_wgan(
         generator=generator, 
         critic=critic, 
@@ -37,14 +51,15 @@ def main():
     
     print("\nTraining complete! Saving model weights...")
     
-    project_root = Path(__file__).resolve().parent.parent
-    models_dir = project_root / "models"
-    models_dir.mkdir(parents=True, exist_ok=True)
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
     
-    torch.save(generator.state_dict(), models_dir / "generator.pth")
-    torch.save(critic.state_dict(), models_dir / "critic.pth")
+    gen_weights = generator.module.state_dict() if gpu_count > 1 else generator.state_dict()
+    crit_weights = critic.module.state_dict() if gpu_count > 1 else critic.state_dict()
     
-    print(f"Models safely saved to: {models_dir}")
+    torch.save(gen_weights, MODELS_DIR / "generator.pth")
+    torch.save(crit_weights, MODELS_DIR / "critic.pth")
+    
+    print(f"Models safely saved to: {MODELS_DIR}")
 
 if __name__ == "__main__":
     main()
