@@ -105,16 +105,21 @@
 <span class="sd">        torch.Tensor: A scalar tensor representing the computed gradient penalty.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">batch_size</span> <span class="o">=</span> <span class="n">real_samples</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-    
     <span class="n">current_device</span> <span class="o">=</span> <span class="n">real_samples</span><span class="o">.</span><span class="n">device</span>
-
-    <span class="n">fake_samples</span> <span class="o">=</span> <span class="n">fake_samples</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
-
-    <span class="n">epsilon</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">current_device</span><span class="p">)</span>
     
+    <span class="n">fake_samples</span> <span class="o">=</span> <span class="n">fake_samples</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
+    
+    <span class="n">epsilon</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">current_device</span><span class="p">)</span>
     <span class="n">interpolated</span> <span class="o">=</span> <span class="p">(</span><span class="n">epsilon</span> <span class="o">*</span> <span class="n">real_samples</span> <span class="o">+</span> <span class="p">((</span><span class="mi">1</span> <span class="o">-</span> <span class="n">epsilon</span><span class="p">)</span> <span class="o">*</span> <span class="n">fake_samples</span><span class="p">))</span><span class="o">.</span><span class="n">requires_grad_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
     
-    <span class="n">critic_interpolated</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">interpolated</span><span class="p">)</span>
+    <span class="c1"># ==============================================================</span>
+    <span class="c1"># THE MULTI-GPU FIX: Bypass DataParallel for the penalty calculation.</span>
+    <span class="c1"># DataParallel cannot trace second-order gradients across GPUs.</span>
+    <span class="c1"># ==============================================================</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">critic</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">DataParallel</span><span class="p">):</span>
+        <span class="n">critic_interpolated</span> <span class="o">=</span> <span class="n">critic</span><span class="o">.</span><span class="n">module</span><span class="p">(</span><span class="n">interpolated</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">critic_interpolated</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">interpolated</span><span class="p">)</span>
     
     <span class="n">gradients</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">grad</span><span class="p">(</span>
         <span class="n">outputs</span><span class="o">=</span><span class="n">critic_interpolated</span><span class="p">,</span>
