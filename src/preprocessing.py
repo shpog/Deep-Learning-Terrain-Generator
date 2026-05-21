@@ -1,3 +1,12 @@
+"""
+Preprocessing Data Pipeline for Terrain Generation.
+
+This module handles the extraction, alignment, aggregation, and normalization
+of high-resolution GeoTIFF files from WorldClim. It is optimized to process
+massive global datasets (up to 30s resolution) iteratively to prevent memory
+overflow, outputting a memory-mapped NumPy array for training.
+"""
+
 import os
 import glob
 import rasterio
@@ -7,14 +16,41 @@ import torch
 from config import RESOLUTION, RAW_DATA_DIR, PROCESSED_DATA_DIR
 
 def load_geotiff(file_path):
-    """Reads a single GeoTIFF."""
+    """
+    Reads a single GeoTIFF file and extracts the 2D array and NoData value.
+
+    Args:
+        file_path (str or pathlib.Path): The absolute or relative path to the .tif file.
+
+    Returns:
+        tuple: A tuple containing:
+            - numpy.ndarray: The 2D array of the raster data.
+            - float: The specific NoData value used in this raster.
+    """
     with rasterio.open(file_path) as src:
         return src.read(1), src.nodata
 
 def aggregate_monthly_data(file_pattern, operation='sum'):
     """
-    Finds all 12 monthly files matching the pattern and aggregates them iteratively
-    to prevent RAM overflow on high-resolution (e.g., 30s) datasets.
+    Aggregates 12 monthly climate files into a single annual array.
+
+    This function operates iteratively. It loads one file, applies it to a 
+    running total, and deletes it from memory before loading the next. 
+    This prevents RAM overflow on 30s global datasets.
+
+    Args:
+        file_pattern (str): The glob pattern to match the 12 monthly files.
+        operation (str, optional): The aggregation method to use. 
+            Accepts 'sum' (for precipitation) or 'mean' (for temperature). 
+            Defaults to 'sum'.
+
+    Raises:
+        FileNotFoundError: If no files match the provided file_pattern.
+
+    Returns:
+        tuple: A tuple containing:
+            - numpy.ndarray: The aggregated 2D array.
+            - float: The NoData value used in the dataset.
     """
     files = sorted(glob.glob(file_pattern))
     if not files:
@@ -44,7 +80,20 @@ def aggregate_monthly_data(file_pattern, operation='sum'):
     return aggregated, nodata_val
 
 def clean_and_normalize(array, nodata_val, fill_value=0.0):
-    """Isolates valid data, normalizes to [0, 1], and fills NoData gaps."""
+    """
+    Isolates valid data, normalizes it to [0, 1], and fills NoData gaps.
+
+    It is crucial to calculate the min/max ONLY on valid data, otherwise
+    the NoData values (e.g., -9999) will distort the scaling.
+
+    Args:
+        array (numpy.ndarray): The raw 2D input array.
+        nodata_val (float): The value representing missing data/oceans.
+        fill_value (float, optional): The value to replace NoData with. Defaults to 0.0.
+
+    Returns:
+        numpy.ndarray: A normalized 2D array.
+    """
     valid_mask = (array != nodata_val) & ~np.isnan(array)
     
     min_val = np.min(array[valid_mask])
@@ -56,6 +105,13 @@ def clean_and_normalize(array, nodata_val, fill_value=0.0):
     return processed_array
 
 def create_terrain_tensor():
+    """
+    Executes the full pipeline to load, aggregate, clean, and stack WorldClim data.
+
+    Returns:
+        numpy.ndarray: A 3D array of shape [3, Height, Width] representing 
+        Elevation, Precipitation, and Temperature.
+    """
     precip_pattern = str(RAW_DATA_DIR / f"wc2.1_{RESOLUTION}_prec_*.tif")
     temp_pattern   = str(RAW_DATA_DIR / f"wc2.1_{RESOLUTION}_tavg_*.tif")
     elev_pattern   = str(RAW_DATA_DIR / f"wc2.1_{RESOLUTION}_elev.tif")
