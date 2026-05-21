@@ -1,3 +1,12 @@
+"""
+Global Configuration and Hyperparameters.
+
+This module acts as the single source of truth for all file paths, 
+dataset resolutions, and neural network hyperparameters used across 
+the Terrain Generator project. Modifying values here will automatically 
+propagate through the preprocessing, dataset, and training pipelines.
+"""
+
 import os
 from pathlib import Path
 

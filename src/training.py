@@ -1,3 +1,11 @@
+"""
+Training Loop and Optimization Logic for WGAN-GP.
+
+This module contains the core algorithms required to train the Terrain Generator.
+It handles the alternating optimization between the Critic and Generator, and 
+computes the mathematically strict Gradient Penalty required for Wasserstein GANs.
+"""
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -9,12 +17,19 @@ from config import (
 
 def compute_gradient_penalty(critic, real_samples, fake_samples, device):
     """
-    Calculates the gradient penalty for WGAN-GP.
-    
-    1. Generates random interpolations between real and fake images.
-    2. Passes interpolations through the Critic.
-    3. Calculates gradients of the Critic's output with respect to the interpolations.
-    4. Penalizes gradients that deviate from a norm (magnitude) of 1.0.
+    Calculates the gradient penalty for the WGAN-GP to enforce 1-Lipschitz continuity.
+
+    The penalty ensures the gradient of the Critic's output with respect to the 
+    input image has a norm (magnitude) of roughly 1.0. This stabilizes training 
+    and prevents mode collapse.
+
+    Args:
+        critic (torch.nn.Module): The initialized Critic network.
+        real_samples (torch.Tensor): A batch of real terrain maps.
+        fake_samples (torch.Tensor): A batch of generated fake terrain maps.
+
+    Returns:
+        torch.Tensor: A scalar tensor representing the computed gradient penalty.
     """
     batch_size = real_samples.size(0)
     
@@ -43,7 +58,21 @@ def compute_gradient_penalty(critic, real_samples, fake_samples, device):
 
 def train_wgan(generator, critic, dataloader, device):
     """
-    The main WGAN-GP training loop.
+    Executes the main WGAN-GP training loop.
+
+    The loop strictly follows the WGAN rule of updating the Critic multiple 
+    times (defined by CRITIC_ITERATIONS) for every single Generator update. 
+
+    Args:
+        generator (torch.nn.Module): The initialized TerrainGenerator network.
+        critic (torch.nn.Module): The initialized TerrainCritic network.
+        dataloader (torch.utils.data.DataLoader): The DataLoader providing real terrain patches.
+        device (torch.device): The primary computation device (e.g., 'cuda' or 'cpu').
+
+    Returns:
+        tuple: A tuple containing the fully trained networks:
+            - torch.nn.Module: The updated Generator.
+            - torch.nn.Module: The updated Critic.
     """
     opt_gen = optim.Adam(generator.parameters(), lr=LEARNING_RATE, betas=(BETA1, BETA2))
     opt_critic = optim.Adam(critic.parameters(), lr=LEARNING_RATE, betas=(BETA1, BETA2))

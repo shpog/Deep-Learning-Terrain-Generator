@@ -1,3 +1,11 @@
+"""
+Execution Entry Point for Terrain Generation Training.
+
+This script ties together the dataset loaders, the neural network models, 
+and the WGAN-GP training loop. It handles hardware detection (including 
+multi-GPU cluster scaling via DataParallel) and saves the final weights.
+"""
+
 import torch
 import torch.nn as nn
 import os
@@ -12,6 +20,17 @@ from config import (
 )
 
 def main():
+    """
+    Initializes hardware, models, and begins the training loop.
+
+    Workflow:
+        1. Detects available GPUs and initializes CUDA if available.
+        2. Loads the memory-mapped TerrainDataset via a multiprocessing DataLoader.
+        3. Initializes the Generator and Critic networks.
+        4. Wraps models in torch.nn.DataParallel if >1 GPU is detected.
+        5. Executes the WGAN-GP training loop for the specified number of epochs.
+        6. Safely unwraps and saves the final model weights to the disk.
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     gpu_count = torch.cuda.device_count()
 
