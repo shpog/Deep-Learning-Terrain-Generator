@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
+import torchvision.utils as vutils
 
 from config import (
     LEARNING_RATE, BETA1, BETA2, CRITIC_ITERATIONS, LAMBDA_GP, LATENT_DIM
@@ -39,10 +40,6 @@ def compute_gradient_penalty(critic, real_samples, fake_samples):
     epsilon = torch.rand(batch_size, 1, 1, 1, device=current_device)
     interpolated = (epsilon * real_samples + ((1 - epsilon) * fake_samples)).requires_grad_(True)
     
-    # ==============================================================
-    # THE MULTI-GPU FIX: Bypass DataParallel for the penalty calculation.
-    # DataParallel cannot trace second-order gradients across GPUs.
-    # ==============================================================
     if isinstance(critic, nn.DataParallel):
         critic_interpolated = critic.module(interpolated)
     else:
@@ -126,5 +123,13 @@ def train_wgan(generator, critic, dataloader, device):
                     Loss_Critic=loss_critic.item(), 
                     Loss_Gen=loss_gen.item()
                 )
+            if epoch % 10 == 0:
+                generator.eval()
+                with torch.no_grad():
+                    fixed_noise = torch.randn(16, LATENT_DIM, 1, 1, device=device)
+                    fake_checkpoint = generator(fixed_noise).cpu()
+                    elevation_only = fake_checkpoint[:, 0:1, :, :] 
+                    vutils.save_image(elevation_only, f"checkpoint_epoch_{epoch}.png", nrow=4, normalize=True)
+                generator.train()
                 
     return generator, critic
