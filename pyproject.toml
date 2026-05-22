@@ -17,7 +17,9 @@ dependencies = [
     "rasterio",
     "numpy",
     "matplotlib",
-    "tqdm"
+    "tqdm",
+    "trame",
+    "pyvista"
 ]
 
 [project.optional-dependencies]
