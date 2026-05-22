@@ -57,33 +57,33 @@ class TerrainDataset(Dataset):
 
     def __getitem__(self, idx):
         """
-        Fetches a single random patch of size [TILE_SIZE, TILE_SIZE].
-
-        This method actively filters out patches that consist entirely of ocean 
-        (where elevation max is 0.0) to prevent the neural network from suffering 
-        mode collapse on empty water tiles.
-
-        Args:
-            idx (int): The index requested by the PyTorch DataLoader. 
-                (Note: This is ignored in favor of random spatial cropping).
-
-        Returns:
-            torch.Tensor: A float32 tensor of shape [Channels, TILE_SIZE, TILE_SIZE].
+        Fetches a tuple of (condition, target) for the Conditional GAN.
+        - condition: The rightmost pixels of an adjacent tile (shape: [3, 256, 32])
+        - target: The actual terrain tile to generate (shape: [3, 256, 256])
         """
+        from config import CONDITION_WIDTH # Import our new setting
+        
         if self.data is None:
             self.data = np.load(self.filepath, mmap_mode='r')
 
+        total_crop_width = TILE_SIZE + CONDITION_WIDTH
+
         while True:
             y = np.random.randint(0, self.height - TILE_SIZE)
-            x = np.random.randint(0, self.width - TILE_SIZE)
+            x = np.random.randint(0, self.width - total_crop_width)
             
-            patch_numpy = self.data[:, y:y+TILE_SIZE, x:x+TILE_SIZE]
+            patch_numpy = self.data[:, y:y+TILE_SIZE, x:x+total_crop_width]
             
-            if np.mean(patch_numpy[0]) > 0.15: 
+            condition_numpy = patch_numpy[:, :, :CONDITION_WIDTH]
+            target_numpy = patch_numpy[:, :, CONDITION_WIDTH:]
+            
+            if np.mean(target_numpy[0]) > 0.15:
                 break
                 
-        patch_tensor = torch.from_numpy(np.array(patch_numpy).copy()).float()
-        return patch_tensor
+        condition_tensor = torch.from_numpy(np.array(condition_numpy).copy()).float()
+        target_tensor = torch.from_numpy(np.array(target_numpy).copy()).float()
+        
+        return condition_tensor, target_tensor
 
 def get_dataloader(batch_size=32, num_workers=0):
     """

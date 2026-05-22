@@ -8,12 +8,13 @@ noise into terrain maps) and the Critic (which scores the realism of maps).
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 class TerrainGenerator(nn.Module):
     """
-    The Generator network for the WGAN-GP.
+    Conditional Generator network for the WGAN-GP.
 
-    Takes a latent noise vector and progressively upsamples it through 
+    Takes a latent noise vector and an edge condition, and progressively upsamples them through 
     transposed convolutional layers to output a 3-channel image 
     (Elevation, Precipitation, Temperature) normalized between [0, 1].
 
@@ -34,9 +35,40 @@ class TerrainGenerator(nn.Module):
         super(TerrainGenerator, self).__init__()
         self.latent_dim = latent_dim
         
-        self.model = nn.Sequential(
-            # Input: [Batch, latent_dim, 1, 1] -> Output: [Batch, 512, 4, 4]
-            nn.ConvTranspose2d(latent_dim, 512, kernel_size=4, stride=1, padding=0, bias=False),
+        self.encoder = nn.Sequential(
+            # 256x32 -> 128x16
+            nn.Conv2d(img_channels, 32, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
+            
+            # 128x16 -> 64x8
+            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.LeakyReLU(0.2, inplace=True),
+            
+            # 64x8 -> 32x4
+            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2, inplace=True),
+            
+            # 32x4 -> 16x2
+            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.LeakyReLU(0.2, inplace=True),
+            
+            # 16x2 -> 8x1
+            nn.Conv2d(256, 256, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.LeakyReLU(0.2, inplace=True),
+            
+            # Flatten to 1D and project linearly to match the latent_dim size
+            nn.Flatten(),
+            nn.Linear(256 * 8 * 1, latent_dim)
+        )
+
+        combined_dim = latent_dim * 2
+        
+        self.generator = nn.Sequential(
+            nn.ConvTranspose2d(combined_dim, 512, kernel_size=4, stride=1, padding=0, bias=False),
             nn.BatchNorm2d(512),
             nn.ReLU(inplace=True),
             
@@ -58,7 +90,7 @@ class TerrainGenerator(nn.Module):
             # Final Layer: 128x128 -> 256x256 (3 channels)
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
             nn.Conv2d(16, img_channels, kernel_size=3, stride=1, padding=1),
-            nn.Sigmoid()
+            nn.Sigmoid() 
         )
 
     def _block(self, in_channels, out_channels, kernel_size, stride, padding):
@@ -76,33 +108,35 @@ class TerrainGenerator(nn.Module):
             torch.nn.Sequential: A block of ConvTranspose2d, BatchNorm2d, and ReLU.
         """
         return nn.Sequential(
-        nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
-        nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False),
-        nn.BatchNorm2d(out_channels),
-        nn.ReLU(inplace=True)
-    )
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
 
-    def forward(self, x):
+    def forward(self, noise, condition):
         """
-        Executes the forward pass of the Generator.
+        Executes the forward pass of the Conditional Generator.
 
         Args:
-            x (torch.Tensor): A noise tensor of shape [Batch, latent_dim, 1, 1].
+            noise (torch.Tensor): A noise tensor of shape [Batch, latent_dim, 1, 1].
+            condition (torch.Tensor): Edge image of shape [Batch, img_channels, 256, 32].
 
         Returns:
             torch.Tensor: Generated terrain image of shape [Batch, img_channels, 256, 256].
         """
-        return self.model(x)
+        encoded_edge = self.encoder(condition)
+        encoded_edge = encoded_edge.view(encoded_edge.size(0), self.latent_dim, 1, 1)
+        combined_input = torch.cat([noise, encoded_edge], dim=1)
+        
+        return self.generator(combined_input)
 
 
 class TerrainCritic(nn.Module):
     """
-    The Critic (Discriminator) network for the WGAN-GP.
+    The Critic (Discriminator) network for conditional WGAN-GP.
 
-    Unlike a standard GAN, the Critic outputs an unbounded real number 
-    representing the Wasserstein distance, rather than a probability between 0 and 1.
-    It uses InstanceNorm2d instead of BatchNorm2d to remain compatible 
-    with the gradient penalty.
+    Evaluates the realism of the generated tile and its alignment with the edge condition.
 
     Attributes:
         model (torch.nn.Sequential): The sequential block of neural network layers.
@@ -116,10 +150,12 @@ class TerrainCritic(nn.Module):
                 Defaults to 3.
         """
         super(TerrainCritic, self).__init__()
+
+        in_channels = img_channels * 2
         
         self.model = nn.Sequential(
             # Input: [Batch, 3, 256, 256] -> Output: [Batch, 16, 128, 128]
-            nn.Conv2d(img_channels, 16, kernel_size=4, stride=2, padding=1),
+            nn.Conv2d(in_channels, 16, kernel_size=4, stride=2, padding=1),
             nn.LeakyReLU(0.2, inplace=True),
             
             # Input: 128x128 -> Output: 64x64
@@ -161,17 +197,16 @@ class TerrainCritic(nn.Module):
             nn.LeakyReLU(0.2, inplace=True)
         )
 
-    def forward(self, x):
+    def forward(self, x, condition):
         """
-        Executes the forward pass of the Critic.
-
         Args:
-            x (torch.Tensor): Image tensor of shape [Batch, img_channels, 256, 256].
-
-        Returns:
-            torch.Tensor: A raw scalar score of shape [Batch, 1, 1, 1].
+            x: The terrain patch [Batch, 3, 256, 256]
+            condition: The edge hint [Batch, 3, 256, 32]
         """
-        return self.model(x)
+        padded_condition = F.pad(condition, (0, 256 - condition.shape[3], 0, 0))
+        combined = torch.cat([x, padded_condition], dim=1)
+        
+        return self.model(combined)
 
 
 def initialize_weights(model):

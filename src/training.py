@@ -16,7 +16,7 @@ from config import (
     LEARNING_RATE, BETA1, BETA2, CRITIC_ITERATIONS, LAMBDA_GP, LATENT_DIM
 )
 
-def compute_gradient_penalty(critic, real_samples, fake_samples):
+def compute_gradient_penalty(critic, real_samples, fake_samples, conditions):
     """
     Calculates the gradient penalty for the WGAN-GP to enforce 1-Lipschitz continuity.
 
@@ -41,9 +41,9 @@ def compute_gradient_penalty(critic, real_samples, fake_samples):
     interpolated = (epsilon * real_samples + ((1 - epsilon) * fake_samples)).requires_grad_(True)
     
     if isinstance(critic, nn.DataParallel):
-        critic_interpolated = critic.module(interpolated)
+        critic_interpolated = critic.module(interpolated, conditions)
     else:
-        critic_interpolated = critic(interpolated)
+        critic_interpolated = critic(interpolated, conditions)
     
     gradients = torch.autograd.grad(
         outputs=critic_interpolated,
@@ -88,18 +88,19 @@ def train_wgan(generator, critic, dataloader, device):
 
     for epoch in range(EPOCHS):
         loop = tqdm(dataloader, leave=True)
-        for batch_idx, real_images in enumerate(loop):
+        for batch_idx, (conditions, real_images) in enumerate(loop):
             real_images = real_images.to(device)
+            conditions = conditions.to(device)
             batch_size = real_images.shape[0]
 
             for _ in range(CRITIC_ITERATIONS):
                 noise = torch.randn(batch_size, LATENT_DIM, 1, 1, device=device)
-                fake_images = generator(noise)
+                fake_images = generator(noise, conditions)
 
-                critic_real = critic(real_images).reshape(-1)
-                critic_fake = critic(fake_images.detach()).reshape(-1)
+                critic_real = critic(real_images, conditions).reshape(-1)
+                critic_fake = critic(fake_images.detach(), conditions).reshape(-1)
 
-                gp = compute_gradient_penalty(critic, real_images, fake_images)
+                gp = compute_gradient_penalty(critic, real_images, fake_images, conditions)
 
                 loss_critic = (
                     -(torch.mean(critic_real) - torch.mean(critic_fake)) 
@@ -110,7 +111,7 @@ def train_wgan(generator, critic, dataloader, device):
                 loss_critic.backward()
                 opt_critic.step()
 
-            output = critic(fake_images).reshape(-1)
+            output = critic(fake_images, conditions).reshape(-1)
             loss_gen = -torch.mean(output)
 
             generator.zero_grad()
