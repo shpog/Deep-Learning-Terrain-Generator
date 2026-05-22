@@ -17,14 +17,16 @@ dependencies = [
     "rasterio",
     "numpy",
     "matplotlib",
-    "tqdm"
+    "tqdm",
+    "trame",
+    "pyvista"
 ]
 
 [project.optional-dependencies]
 dev = [
     "jupyter",
     "pytest",
-    "black"
+    "black",
     "sphinx",
     "sphinx-rtd-theme"
 ]
