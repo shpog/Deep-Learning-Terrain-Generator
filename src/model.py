@@ -36,7 +36,9 @@ class TerrainGenerator(nn.Module):
         
         self.model = nn.Sequential(
             # Input: [Batch, latent_dim, 1, 1] -> Output: [Batch, 512, 4, 4]
-            self._block(latent_dim, 512, 4, 1, 0),
+            nn.ConvTranspose2d(latent_dim, 512, kernel_size=4, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True),
             
             # Input: 4x4 -> Output: 8x8
             self._block(512, 256, 3, 1, 1),
@@ -54,8 +56,9 @@ class TerrainGenerator(nn.Module):
             self._block(32, 16, 3, 1, 1),
             
             # Final Layer: 128x128 -> 256x256 (3 channels)
-            nn.ConvTranspose2d(16, img_channels, kernel_size=4, stride=2, padding=1),
-            nn.Sigmoid() # Forces output to [0.0, 1.0] to match our preprocessed dataset
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(16, img_channels, kernel_size=3, stride=1, padding=1),
+            nn.Sigmoid()
         )
 
     def _block(self, in_channels, out_channels, kernel_size, stride, padding):
