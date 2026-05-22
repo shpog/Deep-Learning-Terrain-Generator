@@ -81,6 +81,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.optim</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">optim</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tqdm</span><span class="w"> </span><span class="kn">import</span> <span class="n">tqdm</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.utils</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">vutils</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">config</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">LEARNING_RATE</span><span class="p">,</span> <span class="n">BETA1</span><span class="p">,</span> <span class="n">BETA2</span><span class="p">,</span> <span class="n">CRITIC_ITERATIONS</span><span class="p">,</span> <span class="n">LAMBDA_GP</span><span class="p">,</span> <span class="n">LATENT_DIM</span>
@@ -112,10 +113,6 @@
     <span class="n">epsilon</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">current_device</span><span class="p">)</span>
     <span class="n">interpolated</span> <span class="o">=</span> <span class="p">(</span><span class="n">epsilon</span> <span class="o">*</span> <span class="n">real_samples</span> <span class="o">+</span> <span class="p">((</span><span class="mi">1</span> <span class="o">-</span> <span class="n">epsilon</span><span class="p">)</span> <span class="o">*</span> <span class="n">fake_samples</span><span class="p">))</span><span class="o">.</span><span class="n">requires_grad_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
     
-    <span class="c1"># ==============================================================</span>
-    <span class="c1"># THE MULTI-GPU FIX: Bypass DataParallel for the penalty calculation.</span>
-    <span class="c1"># DataParallel cannot trace second-order gradients across GPUs.</span>
-    <span class="c1"># ==============================================================</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">critic</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">DataParallel</span><span class="p">):</span>
         <span class="n">critic_interpolated</span> <span class="o">=</span> <span class="n">critic</span><span class="o">.</span><span class="n">module</span><span class="p">(</span><span class="n">interpolated</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
@@ -202,6 +199,14 @@
                     <span class="n">Loss_Critic</span><span class="o">=</span><span class="n">loss_critic</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> 
                     <span class="n">Loss_Gen</span><span class="o">=</span><span class="n">loss_gen</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
                 <span class="p">)</span>
+            <span class="k">if</span> <span class="n">epoch</span> <span class="o">%</span> <span class="mi">10</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">generator</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+                <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+                    <span class="n">fixed_noise</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="n">LATENT_DIM</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+                    <span class="n">fake_checkpoint</span> <span class="o">=</span> <span class="n">generator</span><span class="p">(</span><span class="n">fixed_noise</span><span class="p">)</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
+                    <span class="n">elevation_only</span> <span class="o">=</span> <span class="n">fake_checkpoint</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:]</span> 
+                    <span class="n">vutils</span><span class="o">.</span><span class="n">save_image</span><span class="p">(</span><span class="n">elevation_only</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;checkpoint_epoch_</span><span class="si">{</span><span class="n">epoch</span><span class="si">}</span><span class="s2">.png&quot;</span><span class="p">,</span> <span class="n">nrow</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="n">generator</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
                 
     <span class="k">return</span> <span class="n">generator</span><span class="p">,</span> <span class="n">critic</span></div>
 
