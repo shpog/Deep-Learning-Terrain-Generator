@@ -79,7 +79,7 @@ class TerrainDataset(Dataset):
             
             patch_numpy = self.data[:, y:y+TILE_SIZE, x:x+TILE_SIZE]
             
-            if np.max(patch_numpy[0]) > 0.0:
+            if np.mean(patch_numpy[0]) > 0.15: 
                 break
                 
         patch_tensor = torch.from_numpy(np.array(patch_numpy).copy()).float()

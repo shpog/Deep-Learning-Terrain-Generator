@@ -39,19 +39,19 @@ class TerrainGenerator(nn.Module):
             self._block(latent_dim, 512, 4, 1, 0),
             
             # Input: 4x4 -> Output: 8x8
-            self._block(512, 256, 4, 2, 1),
+            self._block(512, 256, 3, 1, 1),
             
             # Input: 8x8 -> Output: 16x16
-            self._block(256, 128, 4, 2, 1),
+            self._block(256, 128, 3, 1, 1),
             
             # Input: 16x16 -> Output: 32x32
-            self._block(128, 64, 4, 2, 1),
+            self._block(128, 64, 3, 1, 1),
             
             # Input: 32x32 -> Output: 64x64
-            self._block(64, 32, 4, 2, 1),
+            self._block(64, 32, 3, 1, 1),
             
             # Input: 64x64 -> Output: 128x128
-            self._block(32, 16, 4, 2, 1),
+            self._block(32, 16, 3, 1, 1),
             
             # Final Layer: 128x128 -> 256x256 (3 channels)
             nn.ConvTranspose2d(16, img_channels, kernel_size=4, stride=2, padding=1),
@@ -73,10 +73,11 @@ class TerrainGenerator(nn.Module):
             torch.nn.Sequential: A block of ConvTranspose2d, BatchNorm2d, and ReLU.
         """
         return nn.Sequential(
-            nn.ConvTranspose2d(in_channels, out_channels, kernel_size, stride, padding, bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True)
-        )
+        nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+        nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False),
+        nn.BatchNorm2d(out_channels),
+        nn.ReLU(inplace=True)
+    )
 
     def forward(self, x):
         """
