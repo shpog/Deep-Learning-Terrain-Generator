@@ -88,21 +88,20 @@ def train_wgan(generator, critic, dataloader, device):
     from config import EPOCHS 
 
     for epoch in range(EPOCHS):
-        for epoch in range(EPOCHS):
-            if epoch % 10 == 0:
-                generator.eval()
-                with torch.no_grad():
-                    fixed_noise = torch.randn(16, LATENT_DIM, 1, 1, device=device)
-                    from config import TILE_SIZE, CONDITION_WIDTH, IMG_CHANNELS
-                    dummy_condition = torch.full((16, IMG_CHANNELS, TILE_SIZE, TILE_SIZE), 0.5, device=device)
-                    dummy_mask = torch.zeros((16, 1, TILE_SIZE, TILE_SIZE), device=device)
-                    dummy_mask[:, :, :, :CONDITION_WIDTH] = 1.0
-                    dummy_condition = dummy_condition * dummy_mask
-                    fake_checkpoint = generator(fixed_noise, dummy_condition, dummy_mask).cpu()
-                    elevation_only = fake_checkpoint[:, 0:1, :, :] 
-                    import torchvision.utils as vutils
-                    vutils.save_image(elevation_only, f"checkpoint_epoch_{epoch}.png", nrow=4, normalize=True)
-                generator.train()
+        if epoch % 10 == 0:
+            generator.eval()
+            with torch.no_grad():
+                fixed_noise = torch.randn(16, LATENT_DIM, 1, 1, device=device)
+                from config import TILE_SIZE, CONDITION_WIDTH, IMG_CHANNELS
+                dummy_condition = torch.full((16, IMG_CHANNELS, TILE_SIZE, TILE_SIZE), 0.5, device=device)
+                dummy_mask = torch.zeros((16, 1, TILE_SIZE, TILE_SIZE), device=device)
+                dummy_mask[:, :, :, :CONDITION_WIDTH] = 1.0
+                dummy_condition = dummy_condition * dummy_mask
+                fake_checkpoint = generator(fixed_noise, dummy_condition, dummy_mask).cpu()
+                elevation_only = fake_checkpoint[:, 0:1, :, :] 
+                import torchvision.utils as vutils
+                vutils.save_image(elevation_only, f"checkpoint_epoch_{epoch}.png", nrow=4, normalize=True)
+            generator.train()
         loop = tqdm(dataloader, leave=True)
         for batch_idx, (conditions, masks, real_images) in enumerate(loop):
             real_images = real_images.to(device)
