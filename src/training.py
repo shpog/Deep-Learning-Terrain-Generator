@@ -91,12 +91,11 @@ def train_wgan(generator, critic, dataloader, device):
     with torch.no_grad():
         fixed_noise = torch.randn(16, LATENT_DIM, 1, 1, device=device)
         
-        # Use random uniform noise for the conditions instead of a flat 0.5
-        # so you can see how the network reacts to 16 different edges
-        dummy_condition = torch.rand((16, IMG_CHANNELS, TILE_SIZE, TILE_SIZE), device=device)
-        dummy_mask = torch.zeros((16, 1, TILE_SIZE, TILE_SIZE), device=device)
-        dummy_mask[:, :, :, :CONDITION_WIDTH] = 1.0
-        dummy_condition = dummy_condition * dummy_mask
+        # Pull a real batch from the dataloader instead of using white noise
+        real_conditions, real_masks, _ = next(iter(dataloader))
+        
+        dummy_condition = real_conditions[:16].to(device)
+        dummy_mask = real_masks[:16].to(device)
     generator.train()
 
     for epoch in range(EPOCHS):
