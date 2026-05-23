@@ -53,8 +53,8 @@ class TerrainGenerator(nn.Module):
 
     def _up_block(self, in_channels, out_channels):
         return nn.Sequential(
-            nn.ReflectionPad2d(1),
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.ReflectionPad2d(1),
             nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=0, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
