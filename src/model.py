@@ -12,34 +12,40 @@ import torch.nn.functional as F
 
 class TerrainGenerator(nn.Module):
     """
-    Conditional U-Net Generator for WGAN-GP.
-    Uses skip connections to preserve edge data while allowing latent noise 
-    to dictate macro-terrain generation.
+    Bottleneck Outpainting Generator.
+    Compresses the edge condition into a spatial bottleneck, merges it with 
+    the latent noise, and uses Dropout to enforce generative variance.
     """
     def __init__(self, latent_dim=128, img_channels=3):
         super(TerrainGenerator, self).__init__()
         self.latent_dim = latent_dim
         
-        # ENCODER: [Batch, 4, 256, 256] -> Downsamples to 4x4
-        self.enc1 = self._conv_block(img_channels + 1, 32)   # 256 -> 128
-        self.enc2 = self._conv_block(32, 64)                 # 128 -> 64
-        self.enc3 = self._conv_block(64, 128)                # 64 -> 32
-        self.enc4 = self._conv_block(128, 256)               # 32 -> 16
-        self.enc5 = self._conv_block(256, 512)               # 16 -> 8
-        self.enc6 = self._conv_block(512, 512)               # 8 -> 4
+        # ENCODER: Downsamples to 4x4. No skip connections.
+        self.encoder = nn.Sequential(
+            self._conv_block(img_channels + 1, 32),   # 256 -> 128
+            self._conv_block(32, 64),                 # 128 -> 64
+            self._conv_block(64, 128),                # 64 -> 32
+            self._conv_block(128, 256),               # 32 -> 16
+            self._conv_block(256, 512),               # 16 -> 8
+            self._conv_block(512, 512)                # 8 -> 4
+        )
         
+        # NOISE MAPPING: Project 1D latent vector to 3D spatial tensor
         self.noise_fc = nn.Linear(latent_dim, 512 * 4 * 4)
         
-        self.dec1 = self._up_block(1024, 512)                
-        self.dec2 = self._up_block(512 + 512, 256)
-        self.dec3 = self._up_block(256 + 256, 128)
-        self.dec4 = self._up_block(128 + 128, 64)
-        self.dec5 = self._up_block(64 + 64, 32)
-        self.dec6 = self._up_block(32 + 32, 16)
-        
-        self.final = nn.Sequential(
+        # DECODER: Upsamples from 4x4 back to 256x256
+        self.decoder = nn.Sequential(
+            # Bottleneck input: 512 (encoded edge) + 512 (noise) = 1024
+            self._up_block(1024, 512, use_dropout=True),  # 4 -> 8
+            self._up_block(512, 256, use_dropout=True),   # 8 -> 16
+            self._up_block(256, 128, use_dropout=True),   # 16 -> 32
+            self._up_block(128, 64),                      # 32 -> 64
+            self._up_block(64, 32),                       # 64 -> 128
+            
+            # Final Layer: 128 -> 256
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
             nn.ReflectionPad2d(1),
-            nn.Conv2d(16, img_channels, kernel_size=3, stride=1, padding=0),
+            nn.Conv2d(32, img_channels, kernel_size=3, stride=1, padding=0),
             nn.Sigmoid() 
         )
 
@@ -51,39 +57,30 @@ class TerrainGenerator(nn.Module):
             nn.LeakyReLU(0.2, inplace=True)
         )
 
-    def _up_block(self, in_channels, out_channels):
-        return nn.Sequential(
+    def _up_block(self, in_channels, out_channels, use_dropout=False):
+        layers = [
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
             nn.ReflectionPad2d(1),
             nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=0, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
-        )
+        ]
+        if use_dropout:
+            layers.append(nn.Dropout2d(0.3)) # 30% dropout forces reliance on noise
+            
+        return nn.Sequential(*layers)
 
     def forward(self, noise, condition, mask):
         x = torch.cat([condition, mask], dim=1)
-        
-        e1 = self.enc1(x)
-        e2 = self.enc2(e1)
-        e3 = self.enc3(e2)
-        e4 = self.enc4(e3)
-        e5 = self.enc5(e4)
-        e6 = self.enc6(e5)
+        encoded_edge = self.encoder(x)
         
         b_size = noise.size(0)
         noise_flat = noise.view(b_size, self.latent_dim)
         noise_spatial = self.noise_fc(noise_flat).view(b_size, 512, 4, 4)
         
-        bottleneck = torch.cat([e6, noise_spatial], dim=1)
+        bottleneck = torch.cat([encoded_edge, noise_spatial], dim=1)
         
-        d1 = self.dec1(bottleneck)
-        d2 = self.dec2(torch.cat([d1, e5], dim=1))
-        d3 = self.dec3(torch.cat([d2, e4], dim=1))
-        d4 = self.dec4(torch.cat([d3, e3], dim=1))
-        d5 = self.dec5(torch.cat([d4, e2], dim=1))
-        d6 = self.dec6(torch.cat([d5, e1], dim=1))
-        
-        return self.final(d6)
+        return self.decoder(bottleneck)
 
 
 class TerrainCritic(nn.Module):
