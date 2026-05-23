@@ -127,13 +127,11 @@ def train_wgan(generator, critic, dataloader, device):
                 loss_critic.backward()
                 opt_critic.step()
 
-            # 3. Generator Loss with Masked L1 Penalty
             output = critic(fake_images, conditions, masks).reshape(-1)
             
-            # Calculate L1 loss ONLY on the known pixels using the mask
             l1_penalty = F.l1_loss(fake_images * masks, conditions)
             
-            loss_gen = -torch.mean(output) + (100.0 * l1_penalty)
+            loss_gen = -torch.mean(output) + (10.0 * l1_penalty)
 
             generator.zero_grad()
             loss_gen.backward()

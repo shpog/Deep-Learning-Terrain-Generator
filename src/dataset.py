@@ -56,7 +56,7 @@ class TerrainDataset(Dataset):
         return self.epoch_size
 
     def __getitem__(self, idx):
-        from config import CONDITION_WIDTH
+        from config import TILE_SIZE
         import random
         
         if self.data is None:
@@ -72,19 +72,21 @@ class TerrainDataset(Dataset):
                 break
                 
         target_tensor = torch.from_numpy(np.array(patch_numpy).copy()).float()
-        
         mask = torch.zeros((1, TILE_SIZE, TILE_SIZE), dtype=torch.float32)
         
-        direction = random.randint(0, 3)
-        if direction == 0:
-            mask[:, :, :CONDITION_WIDTH] = 1.0
-        elif direction == 1:
-            mask[:, :, -CONDITION_WIDTH:] = 1.0
-        elif direction == 2:
-            mask[:, :CONDITION_WIDTH, :] = 1.0
-        elif direction == 3:
-            mask[:, -CONDITION_WIDTH:, :] = 1.0
+        if random.random() > 0.15:
+            current_width = random.randint(16, 64)
+            direction = random.randint(0, 3)
             
+            if direction == 0:
+                mask[:, :, :current_width] = 1.0 
+            elif direction == 1:
+                mask[:, :, -current_width:] = 1.0
+            elif direction == 2:
+                mask[:, :current_width, :] = 1.0
+            elif direction == 3:
+                mask[:, -current_width:, :] = 1.0
+                
         masked_condition = target_tensor * mask
         
         return masked_condition, mask, target_tensor
