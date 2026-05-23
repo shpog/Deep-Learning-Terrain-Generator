@@ -56,34 +56,38 @@ class TerrainDataset(Dataset):
         return self.epoch_size
 
     def __getitem__(self, idx):
-        """
-        Fetches a tuple of (condition, target) for the Conditional GAN.
-        - condition: The rightmost pixels of an adjacent tile (shape: [3, 256, 32])
-        - target: The actual terrain tile to generate (shape: [3, 256, 256])
-        """
-        from config import CONDITION_WIDTH # Import our new setting
+        from config import CONDITION_WIDTH
+        import random
         
         if self.data is None:
             self.data = np.load(self.filepath, mmap_mode='r')
 
-        total_crop_width = TILE_SIZE + CONDITION_WIDTH
-
         while True:
             y = np.random.randint(0, self.height - TILE_SIZE)
-            x = np.random.randint(0, self.width - total_crop_width)
+            x = np.random.randint(0, self.width - TILE_SIZE)
             
-            patch_numpy = self.data[:, y:y+TILE_SIZE, x:x+total_crop_width]
+            patch_numpy = self.data[:, y:y+TILE_SIZE, x:x+TILE_SIZE]
             
-            condition_numpy = patch_numpy[:, :, :CONDITION_WIDTH]
-            target_numpy = patch_numpy[:, :, CONDITION_WIDTH:]
-            
-            if np.mean(target_numpy[0]) > 0.15:
+            if np.mean(patch_numpy[0]) > 0.15:
                 break
                 
-        condition_tensor = torch.from_numpy(np.array(condition_numpy).copy()).float()
-        target_tensor = torch.from_numpy(np.array(target_numpy).copy()).float()
+        target_tensor = torch.from_numpy(np.array(patch_numpy).copy()).float()
         
-        return condition_tensor, target_tensor
+        mask = torch.zeros((1, TILE_SIZE, TILE_SIZE), dtype=torch.float32)
+        
+        direction = random.randint(0, 3)
+        if direction == 0:
+            mask[:, :, :CONDITION_WIDTH] = 1.0
+        elif direction == 1:
+            mask[:, :, -CONDITION_WIDTH:] = 1.0
+        elif direction == 2:
+            mask[:, :CONDITION_WIDTH, :] = 1.0
+        elif direction == 3:
+            mask[:, -CONDITION_WIDTH:, :] = 1.0
+            
+        masked_condition = target_tensor * mask
+        
+        return masked_condition, mask, target_tensor
 
 def get_dataloader(batch_size=32, num_workers=0):
     """

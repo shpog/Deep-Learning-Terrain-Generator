@@ -35,34 +35,35 @@ class TerrainGenerator(nn.Module):
         super(TerrainGenerator, self).__init__()
         self.latent_dim = latent_dim
         
+        # ENCODER: Input is now [Batch, 4, 256, 256] (Masked Condition + Mask)
         self.encoder = nn.Sequential(
-            # 256x32 -> 128x16
-            nn.Conv2d(img_channels, 32, kernel_size=4, stride=2, padding=1, bias=False),
+            # 256 -> 128
+            nn.Conv2d(img_channels + 1, 32, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
-            
-            # 128x16 -> 64x8
+            # 128 -> 64
             nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(64),
             nn.LeakyReLU(0.2, inplace=True),
-            
-            # 64x8 -> 32x4
+            # 64 -> 32
             nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(128),
             nn.LeakyReLU(0.2, inplace=True),
-            
-            # 32x4 -> 16x2
+            # 32 -> 16
             nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(256),
             nn.LeakyReLU(0.2, inplace=True),
-            
-            # 16x2 -> 8x1
+            # 16 -> 8
+            nn.Conv2d(256, 256, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.LeakyReLU(0.2, inplace=True),
+            # 8 -> 4
             nn.Conv2d(256, 256, kernel_size=4, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(256),
             nn.LeakyReLU(0.2, inplace=True),
             
             # Flatten to 1D and project linearly to match the latent_dim size
             nn.Flatten(),
-            nn.Linear(256 * 8 * 1, latent_dim)
+            nn.Linear(256 * 4 * 4, latent_dim)
         )
 
         combined_dim = latent_dim * 2
@@ -114,7 +115,7 @@ class TerrainGenerator(nn.Module):
             nn.ReLU(inplace=True)
         )
 
-    def forward(self, noise, condition):
+    def forward(self, noise, condition, mask):
         """
         Executes the forward pass of the Conditional Generator.
 
@@ -125,10 +126,11 @@ class TerrainGenerator(nn.Module):
         Returns:
             torch.Tensor: Generated terrain image of shape [Batch, img_channels, 256, 256].
         """
-        encoded_edge = self.encoder(condition)
+        encoder_input = torch.cat([condition, mask], dim=1)
+        encoded_edge = self.encoder(encoder_input)
         encoded_edge = encoded_edge.view(encoded_edge.size(0), self.latent_dim, 1, 1)
-        combined_input = torch.cat([noise, encoded_edge], dim=1)
         
+        combined_input = torch.cat([noise, encoded_edge], dim=1)
         return self.generator(combined_input)
 
 
@@ -151,7 +153,7 @@ class TerrainCritic(nn.Module):
         """
         super(TerrainCritic, self).__init__()
 
-        in_channels = img_channels * 2
+        in_channels = (img_channels * 2) + 1
         
         self.model = nn.Sequential(
             # Input: [Batch, 3, 256, 256] -> Output: [Batch, 16, 128, 128]
@@ -197,15 +199,13 @@ class TerrainCritic(nn.Module):
             nn.LeakyReLU(0.2, inplace=True)
         )
 
-    def forward(self, x, condition):
+    def forward(self, x, condition, mask):
         """
         Args:
             x: The terrain patch [Batch, 3, 256, 256]
             condition: The edge hint [Batch, 3, 256, 32]
         """
-        padded_condition = F.pad(condition, (0, 256 - condition.shape[3], 0, 0))
-        combined = torch.cat([x, padded_condition], dim=1)
-        
+        combined = torch.cat([x, condition, mask], dim=1)
         return self.model(combined)
 
 

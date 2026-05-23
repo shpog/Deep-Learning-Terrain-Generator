@@ -11,12 +11,13 @@ import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 import torchvision.utils as vutils
+import torch.nn.functional as F
 
 from config import (
-    LEARNING_RATE, BETA1, BETA2, CRITIC_ITERATIONS, LAMBDA_GP, LATENT_DIM
+    LEARNING_RATE, BETA1, BETA2, CRITIC_ITERATIONS, LAMBDA_GP, LATENT_DIM, CONDITION_WIDTH
 )
 
-def compute_gradient_penalty(critic, real_samples, fake_samples, conditions):
+def compute_gradient_penalty(critic, real_samples, fake_samples, conditions, masks):
     """
     Calculates the gradient penalty for the WGAN-GP to enforce 1-Lipschitz continuity.
 
@@ -41,9 +42,9 @@ def compute_gradient_penalty(critic, real_samples, fake_samples, conditions):
     interpolated = (epsilon * real_samples + ((1 - epsilon) * fake_samples)).requires_grad_(True)
     
     if isinstance(critic, nn.DataParallel):
-        critic_interpolated = critic.module(interpolated, conditions)
+        critic_interpolated = critic.module(interpolated, conditions, masks)
     else:
-        critic_interpolated = critic(interpolated, conditions)
+        critic_interpolated = critic(interpolated, conditions, masks)
     
     gradients = torch.autograd.grad(
         outputs=critic_interpolated,
@@ -87,32 +88,53 @@ def train_wgan(generator, critic, dataloader, device):
     from config import EPOCHS 
 
     for epoch in range(EPOCHS):
+        for epoch in range(EPOCHS):
+            if epoch % 10 == 0:
+                generator.eval()
+                with torch.no_grad():
+                    fixed_noise = torch.randn(16, LATENT_DIM, 1, 1, device=device)
+                    from config import TILE_SIZE, CONDITION_WIDTH, IMG_CHANNELS
+                    dummy_condition = torch.full((16, IMG_CHANNELS, TILE_SIZE, TILE_SIZE), 0.5, device=device)
+                    dummy_mask = torch.zeros((16, 1, TILE_SIZE, TILE_SIZE), device=device)
+                    dummy_mask[:, :, :, :CONDITION_WIDTH] = 1.0
+                    dummy_condition = dummy_condition * dummy_mask
+                    fake_checkpoint = generator(fixed_noise, dummy_condition, dummy_mask).cpu()
+                    elevation_only = fake_checkpoint[:, 0:1, :, :] 
+                    import torchvision.utils as vutils
+                    vutils.save_image(elevation_only, f"checkpoint_epoch_{epoch}.png", nrow=4, normalize=True)
+                generator.train()
         loop = tqdm(dataloader, leave=True)
-        for batch_idx, (conditions, real_images) in enumerate(loop):
+        for batch_idx, (conditions, masks, real_images) in enumerate(loop):
             real_images = real_images.to(device)
             conditions = conditions.to(device)
+            masks = masks.to(device) # Send masks to GPU
             batch_size = real_images.shape[0]
 
             for _ in range(CRITIC_ITERATIONS):
                 noise = torch.randn(batch_size, LATENT_DIM, 1, 1, device=device)
-                fake_images = generator(noise, conditions)
+                
+                # 2. Pass masks to Generator and Critic
+                fake_images = generator(noise, conditions, masks)
 
-                critic_real = critic(real_images, conditions).reshape(-1)
-                critic_fake = critic(fake_images.detach(), conditions).reshape(-1)
+                critic_real = critic(real_images, conditions, masks).reshape(-1)
+                critic_fake = critic(fake_images.detach(), conditions, masks).reshape(-1)
 
-                gp = compute_gradient_penalty(critic, real_images, fake_images, conditions)
+                # Update compute_gradient_penalty signature to accept masks if you haven't already!
+                gp = compute_gradient_penalty(critic, real_images, fake_images, conditions, masks)
 
-                loss_critic = (
-                    -(torch.mean(critic_real) - torch.mean(critic_fake)) 
-                    + LAMBDA_GP * gp
-                )
+                loss_critic = -(torch.mean(critic_real) - torch.mean(critic_fake)) + LAMBDA_GP * gp
 
                 critic.zero_grad()
                 loss_critic.backward()
                 opt_critic.step()
 
-            output = critic(fake_images, conditions).reshape(-1)
-            loss_gen = -torch.mean(output)
+            # 3. Generator Loss with Masked L1 Penalty
+            output = critic(fake_images, conditions, masks).reshape(-1)
+            
+            # Calculate L1 loss ONLY on the known pixels using the mask
+            l1_penalty = F.l1_loss(fake_images * masks, conditions)
+            
+            loss_gen = -torch.mean(output) + (100.0 * l1_penalty)
 
             generator.zero_grad()
             loss_gen.backward()
@@ -124,13 +146,5 @@ def train_wgan(generator, critic, dataloader, device):
                     Loss_Critic=loss_critic.item(), 
                     Loss_Gen=loss_gen.item()
                 )
-            if epoch % 10 == 0:
-                generator.eval()
-                with torch.no_grad():
-                    fixed_noise = torch.randn(16, LATENT_DIM, 1, 1, device=device)
-                    fake_checkpoint = generator(fixed_noise).cpu()
-                    elevation_only = fake_checkpoint[:, 0:1, :, :] 
-                    vutils.save_image(elevation_only, f"checkpoint_epoch_{epoch}.png", nrow=4, normalize=True)
-                generator.train()
                 
     return generator, critic
