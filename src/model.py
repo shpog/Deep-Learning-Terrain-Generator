@@ -66,7 +66,7 @@ class TerrainGenerator(nn.Module):
             nn.ReLU(inplace=True)
         ]
         if use_dropout:
-            layers.append(nn.Dropout2d(0.3)) # 30% dropout forces reliance on noise
+            layers.append(nn.Dropout2d(0.3))
             
         return nn.Sequential(*layers)
 
