@@ -1,190 +1,145 @@
 """
-Neural Network Architectures for Terrain Generation.
+Training Loop and Optimization Logic for Conditional WGAN-GP.
 
-This module defines the PyTorch modules for the Wasserstein GAN with 
-Gradient Penalty (WGAN-GP). It includes the Generator (which upsamples 
-noise into terrain maps) and the Critic (which scores the realism of maps).
+This module fuses the alternating WGAN-GP optimization with conditional 
+masking and L1 border penalties to generate seamless continuous terrain.
 """
 
 import torch
 import torch.nn as nn
+import torch.optim as optim
+from tqdm import tqdm
+import torchvision.utils as vutils
+import torch.nn.functional as F
 
-class TerrainGenerator(nn.Module):
+from config import (
+    LEARNING_RATE, BETA1, BETA2, CRITIC_ITERATIONS, LAMBDA_GP, LATENT_DIM, CONDITION_WIDTH
+)
+
+def compute_gradient_penalty(critic, real_samples, fake_samples, conditions, masks):
     """
-    The Generator network for the WGAN-GP.
-
-    Takes a latent noise vector and progressively upsamples it through 
-    transposed convolutional layers to output a 3-channel image 
-    (Elevation, Precipitation, Temperature) normalized between [0, 1].
-
-    Attributes:
-        latent_dim (int): The size of the input noise vector.
-        model (torch.nn.Sequential): The sequential block of neural network layers.
+    Calculates the conditional gradient penalty for the cWGAN-GP.
     """
-    def __init__(self, latent_dim=128, img_channels=3):
-        """
-        Initializes the TerrainGenerator.
+    batch_size = real_samples.size(0)
+    current_device = real_samples.device
+    
+    fake_samples = fake_samples.detach()
+    
+    epsilon = torch.rand(batch_size, 1, 1, 1, device=current_device)
+    interpolated = (epsilon * real_samples + ((1 - epsilon) * fake_samples)).requires_grad_(True)
+    
+    if isinstance(critic, nn.DataParallel):
+        critic_interpolated = critic.module(interpolated, conditions, masks)
+    else:
+        critic_interpolated = critic(interpolated, conditions, masks)
+    
+    gradients = torch.autograd.grad(
+        outputs=critic_interpolated,
+        inputs=interpolated,
+        grad_outputs=torch.ones_like(critic_interpolated, device=current_device),
+        create_graph=True,
+        retain_graph=True,
+        only_inputs=True,
+    )[0]
+    
+    gradients = gradients.view(batch_size, -1)
+    gradient_norm = gradients.norm(2, dim=1)
+    gradient_penalty = torch.mean((gradient_norm - 1.0) ** 2)
+    
+    return gradient_penalty
 
-        Args:
-            latent_dim (int, optional): The dimensionality of the input noise vector. 
-                Defaults to 128.
-            img_channels (int, optional): The number of output channels (e.g., 3). 
-                Defaults to 3.
-        """
-        super(TerrainGenerator, self).__init__()
-        self.latent_dim = latent_dim
+def train_wgan(generator, critic, dataloader, device):
+    """
+    Executes the main WGAN-GP training loop with conditional stitching.
+    """
+    opt_gen = optim.Adam(generator.parameters(), lr=LEARNING_RATE, betas=(BETA1, BETA2))
+    opt_critic = optim.Adam(critic.parameters(), lr=LEARNING_RATE, betas=(BETA1, BETA2))
+
+    from config import EPOCHS 
+
+    # --- SETUP FIXED EVALUATION SET ---
+    # We pull a single batch from the dataloader to create a permanent 
+    # reference point for visual checkpointing across all epochs.
+    print("Preparing fixed evaluation conditions...")
+    real_batch = next(iter(dataloader)).to(device)
+    fixed_batch_size = min(16, real_batch.shape[0])
+    
+    fixed_noise = torch.randn(fixed_batch_size, LATENT_DIM, 1, 1, device=device)
+    fixed_masks = torch.zeros(fixed_batch_size, 1, 256, 256, device=device)
+    
+    # We apply a left-side condition to the evaluation batch for consistency
+    fixed_masks[:, :, :, :CONDITION_WIDTH] = 1 
+    fixed_conditions = real_batch[:fixed_batch_size] * fixed_masks
+    # ----------------------------------
+
+    for epoch in range(EPOCHS):
         
-        self.model = nn.Sequential(
-            # Input: [Batch, latent_dim, 1, 1] -> Output: [Batch, 512, 4, 4]
-            nn.ConvTranspose2d(latent_dim, 512, kernel_size=4, stride=1, padding=0, bias=False),
-            nn.BatchNorm2d(512),
-            nn.ReLU(inplace=True),
+        # --- VISUAL CHECKPOINTING ---
+        if epoch % 10 == 0:
+            generator.eval()
+            with torch.no_grad():
+                fake_checkpoint = generator(fixed_noise, fixed_conditions, fixed_masks).cpu()
+                # Assuming channel 0 is Elevation
+                elevation_only = fake_checkpoint[:, 0:1, :, :] 
+                vutils.save_image(elevation_only, f"checkpoint_epoch_{epoch}.png", nrow=4, normalize=True)
+            generator.train()
+        # ----------------------------
+
+        loop = tqdm(dataloader, leave=True)
+        # Note: Dataloader yields just real_images; we dynamically construct masks below
+        for batch_idx, real_images in enumerate(loop):
+            real_images = real_images.to(device)
+            batch_size = real_images.shape[0]
+
+            # --- DYNAMIC MASK GENERATION ---
+            masks = torch.zeros(batch_size, 1, 256, 256, device=device)
+            side = torch.randint(0, 5, (1,)).item() 
             
-            # Input: 4x4 -> Output: 8x8
-            self._block(512, 256, 3, 1, 1),
+            if side == 1: masks[:, :, :, :CONDITION_WIDTH] = 1     # Left
+            elif side == 2: masks[:, :, :, -CONDITION_WIDTH:] = 1  # Right
+            elif side == 3: masks[:, :, :CONDITION_WIDTH, :] = 1   # Top
+            elif side == 4: masks[:, :, -CONDITION_WIDTH:, :] = 1  # Bottom
             
-            # Input: 8x8 -> Output: 16x16
-            self._block(256, 128, 3, 1, 1),
+            conditions = real_images * masks
+            # -------------------------------
+
+            # --- CRITIC UPDATE ---
+            for _ in range(CRITIC_ITERATIONS):
+                noise = torch.randn(batch_size, LATENT_DIM, 1, 1, device=device)
+                
+                fake_images = generator(noise, conditions, masks)
+
+                critic_real = critic(real_images, conditions, masks).reshape(-1)
+                critic_fake = critic(fake_images.detach(), conditions, masks).reshape(-1)
+
+                gp = compute_gradient_penalty(critic, real_images, fake_images, conditions, masks)
+
+                loss_critic = -(torch.mean(critic_real) - torch.mean(critic_fake)) + LAMBDA_GP * gp
+
+                critic.zero_grad()
+                loss_critic.backward()
+                opt_critic.step()
+
+            # --- GENERATOR UPDATE ---
+            output = critic(fake_images, conditions, masks).reshape(-1)
             
-            # Input: 16x16 -> Output: 32x32
-            self._block(128, 64, 3, 1, 1),
+            # L1 Penalty: Forces the generator to perfectly copy the boundary condition pixels
+            l1_penalty = F.l1_loss(fake_images * masks, conditions)
             
-            # Input: 32x32 -> Output: 64x64
-            self._block(64, 32, 3, 1, 1),
-            
-            # Input: 64x64 -> Output: 128x128
-            self._block(32, 16, 3, 1, 1),
-            
-            # Final Layer: 128x128 -> 256x256 (3 channels)
-            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
-            nn.Conv2d(16, img_channels, kernel_size=3, stride=1, padding=1),
-            nn.Sigmoid()
-        )
+            # Combine the adversarial loss with a heavy weight (10.0) on the L1 boundary loss
+            loss_gen = -torch.mean(output) + (10.0 * l1_penalty)
 
-    def _block(self, in_channels, out_channels, kernel_size, stride, padding):
-        """
-        Creates a standard Generator building block.
+            generator.zero_grad()
+            loss_gen.backward()
+            opt_gen.step()
 
-        Args:
-            in_channels (int): Number of input channels.
-            out_channels (int): Number of output channels.
-            kernel_size (int): Size of the convolving kernel.
-            stride (int): Stride of the convolution.
-            padding (int): Zero-padding added to both sides of the input.
-
-        Returns:
-            torch.nn.Sequential: A block of ConvTranspose2d, BatchNorm2d, and ReLU.
-        """
-        return nn.Sequential(
-        nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
-        nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False),
-        nn.BatchNorm2d(out_channels),
-        nn.ReLU(inplace=True)
-    )
-
-    def forward(self, x):
-        """
-        Executes the forward pass of the Generator.
-
-        Args:
-            x (torch.Tensor): A noise tensor of shape [Batch, latent_dim, 1, 1].
-
-        Returns:
-            torch.Tensor: Generated terrain image of shape [Batch, img_channels, 256, 256].
-        """
-        return self.model(x)
-
-
-class TerrainCritic(nn.Module):
-    """
-    The Critic (Discriminator) network for the WGAN-GP.
-
-    Unlike a standard GAN, the Critic outputs an unbounded real number 
-    representing the Wasserstein distance, rather than a probability between 0 and 1.
-    It uses InstanceNorm2d instead of BatchNorm2d to remain compatible 
-    with the gradient penalty.
-
-    Attributes:
-        model (torch.nn.Sequential): The sequential block of neural network layers.
-    """
-    def __init__(self, img_channels=3):
-        """
-        Initializes the TerrainCritic.
-
-        Args:
-            img_channels (int, optional): The number of input channels (e.g., 3). 
-                Defaults to 3.
-        """
-        super(TerrainCritic, self).__init__()
-        
-        self.model = nn.Sequential(
-            # Input: [Batch, 3, 256, 256] -> Output: [Batch, 16, 128, 128]
-            nn.Conv2d(img_channels, 16, kernel_size=4, stride=2, padding=1),
-            nn.LeakyReLU(0.2, inplace=True),
-            
-            # Input: 128x128 -> Output: 64x64
-            self._block(16, 32, 4, 2, 1),
-            
-            # Input: 64x64 -> Output: 32x32
-            self._block(32, 64, 4, 2, 1),
-            
-            # Input: 32x32 -> Output: 16x16
-            self._block(64, 128, 4, 2, 1),
-            
-            # Input: 16x16 -> Output: 8x8
-            self._block(128, 256, 4, 2, 1),
-            
-            # Input: 8x8 -> Output: 4x4
-            self._block(256, 512, 4, 2, 1),
-            
-            # Final Layer: 4x4 -> 1x1 scalar
-            nn.Conv2d(512, 1, kernel_size=4, stride=1, padding=0) 
-        )
-
-    def _block(self, in_channels, out_channels, kernel_size, stride, padding):
-        """
-        Creates a standard Critic building block safely using InstanceNorm.
-
-        Args:
-            in_channels (int): Number of input channels.
-            out_channels (int): Number of output channels.
-            kernel_size (int): Size of the convolving kernel.
-            stride (int): Stride of the convolution.
-            padding (int): Zero-padding added to both sides of the input.
-
-        Returns:
-            torch.nn.Sequential: A block of Conv2d, InstanceNorm2d, and LeakyReLU.
-        """
-        return nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False),
-            nn.InstanceNorm2d(out_channels, affine=True), # NO BatchNorm here!
-            nn.LeakyReLU(0.2, inplace=True)
-        )
-
-    def forward(self, x):
-        """
-        Executes the forward pass of the Critic.
-
-        Args:
-            x (torch.Tensor): Image tensor of shape [Batch, img_channels, 256, 256].
-
-        Returns:
-            torch.Tensor: A raw scalar score of shape [Batch, 1, 1, 1].
-        """
-        return self.model(x)
-
-
-def initialize_weights(model):
-    """
-    Initializes the network weights according to a normal distribution.
-
-    Args:
-        model (torch.nn.Module): The PyTorch neural network module to initialize.
-    """
-    for m in model.modules():
-        if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-            nn.init.normal_(m.weight.data, 0.0, 0.02)
-        elif isinstance(m, (nn.BatchNorm2d, nn.InstanceNorm2d)):
-            nn.init.normal_(m.weight.data, 1.0, 0.02)
-            if m.bias is not None:
-                nn.init.constant_(m.bias.data, 0)
+            # --- LOGGING ---
+            if batch_idx % 50 == 0:
+                loop.set_description(f"Epoch [{epoch}/{EPOCHS}]")
+                loop.set_postfix(
+                    Loss_Critic=loss_critic.item(), 
+                    Loss_Gen=loss_gen.item(),
+                    L1_Border=l1_penalty.item()
+                )
+                
+    return generator, critic

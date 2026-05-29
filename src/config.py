@@ -22,7 +22,7 @@ PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 # DATA & IMAGE SETTINGS
-RESOLUTION = "10m"
+RESOLUTION = "2.5m"
 TILE_SIZE = 256 
 IMG_CHANNELS = 3
 
@@ -33,6 +33,7 @@ LATENT_DIM = 128
 LEARNING_RATE = 1e-4
 BETA1 = 0.0 # Adam optimizer beta1
 BETA2 = 0.9 # Adam optimizer beta2
+CONDITION_WIDTH = 32
 
 # WGAN-Specific Settings
 CRITIC_ITERATIONS = 5
