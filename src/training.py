@@ -1,9 +1,8 @@
 """
-Training Loop and Optimization Logic for WGAN-GP.
+Training Loop and Optimization Logic for Conditional WGAN-GP.
 
-This module contains the core algorithms required to train the Terrain Generator.
-It handles the alternating optimization between the Critic and Generator, and 
-computes the mathematically strict Gradient Penalty required for Wasserstein GANs.
+This module fuses the alternating WGAN-GP optimization with conditional 
+masking and L1 border penalties to generate seamless continuous terrain.
 """
 
 import torch
@@ -11,26 +10,15 @@ import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 import torchvision.utils as vutils
+import torch.nn.functional as F
 
 from config import (
-    LEARNING_RATE, BETA1, BETA2, CRITIC_ITERATIONS, LAMBDA_GP, LATENT_DIM
+    LEARNING_RATE, BETA1, BETA2, CRITIC_ITERATIONS, LAMBDA_GP, LATENT_DIM, CONDITION_WIDTH
 )
 
-def compute_gradient_penalty(critic, real_samples, fake_samples):
+def compute_gradient_penalty(critic, real_samples, fake_samples, conditions, masks):
     """
-    Calculates the gradient penalty for the WGAN-GP to enforce 1-Lipschitz continuity.
-
-    The penalty ensures the gradient of the Critic's output with respect to the 
-    input image has a norm (magnitude) of roughly 1.0. This stabilizes training 
-    and prevents mode collapse.
-
-    Args:
-        critic (torch.nn.Module): The initialized Critic network.
-        real_samples (torch.Tensor): A batch of real terrain maps.
-        fake_samples (torch.Tensor): A batch of generated fake terrain maps.
-
-    Returns:
-        torch.Tensor: A scalar tensor representing the computed gradient penalty.
+    Calculates the conditional gradient penalty for the cWGAN-GP.
     """
     batch_size = real_samples.size(0)
     current_device = real_samples.device
@@ -41,9 +29,9 @@ def compute_gradient_penalty(critic, real_samples, fake_samples):
     interpolated = (epsilon * real_samples + ((1 - epsilon) * fake_samples)).requires_grad_(True)
     
     if isinstance(critic, nn.DataParallel):
-        critic_interpolated = critic.module(interpolated)
+        critic_interpolated = critic.module(interpolated, conditions, masks)
     else:
-        critic_interpolated = critic(interpolated)
+        critic_interpolated = critic(interpolated, conditions, masks)
     
     gradients = torch.autograd.grad(
         outputs=critic_interpolated,
@@ -62,64 +50,70 @@ def compute_gradient_penalty(critic, real_samples, fake_samples):
 
 def train_wgan(generator, critic, dataloader, device):
     """
-    Executes the main WGAN-GP training loop.
-
-    The loop strictly follows the WGAN rule of updating the Critic multiple 
-    times (defined by CRITIC_ITERATIONS) for every single Generator update. 
-
-    Args:
-        generator (torch.nn.Module): The initialized TerrainGenerator network.
-        critic (torch.nn.Module): The initialized TerrainCritic network.
-        dataloader (torch.utils.data.DataLoader): The DataLoader providing real terrain patches.
-        device (torch.device): The primary computation device (e.g., 'cuda' or 'cpu').
-
-    Returns:
-        tuple: A tuple containing the fully trained networks:
-            - torch.nn.Module: The updated Generator.
-            - torch.nn.Module: The updated Critic.
+    Executes the main WGAN-GP training loop with conditional stitching.
     """
     opt_gen = optim.Adam(generator.parameters(), lr=LEARNING_RATE, betas=(BETA1, BETA2))
     opt_critic = optim.Adam(critic.parameters(), lr=LEARNING_RATE, betas=(BETA1, BETA2))
 
-    generator.train()
-    critic.train()
-
     from config import EPOCHS 
 
+    real_batch = next(iter(dataloader)).to(device)
+    fixed_batch_size = min(16, real_batch.shape[0])
+    
+    fixed_noise = torch.randn(fixed_batch_size, LATENT_DIM, 1, 1, device=device)
+    fixed_masks = torch.zeros(fixed_batch_size, 1, 256, 256, device=device)
+    
+    fixed_masks[:, :, :, :CONDITION_WIDTH] = 1 
+    fixed_conditions = real_batch[:fixed_batch_size] * fixed_masks
+
     for epoch in range(EPOCHS):
-        loop = tqdm(dataloader, leave=True)
+        
+        # --- VISUAL CHECKPOINTING ---
         if epoch % 10 == 0:
-                generator.eval()
-                with torch.no_grad():
-                    fixed_noise = torch.randn(16, LATENT_DIM, 1, 1, device=device)
-                    fake_checkpoint = generator(fixed_noise).cpu()
-                    elevation_only = fake_checkpoint[:, 0:1, :, :] 
-                    vutils.save_image(elevation_only, f"checkpoint_epoch_{epoch}.png", nrow=4, normalize=True)
-                generator.train()
+            generator.eval()
+            with torch.no_grad():
+                fake_checkpoint = generator(fixed_noise, fixed_conditions, fixed_masks).cpu()
+                # Assuming channel 0 is Elevation
+                elevation_only = fake_checkpoint[:, 0:1, :, :] 
+                vutils.save_image(elevation_only, f"checkpoint_epoch_{epoch}.png", nrow=4, normalize=True)
+            generator.train()
+
+        loop = tqdm(dataloader, leave=True)
         for batch_idx, real_images in enumerate(loop):
             real_images = real_images.to(device)
             batch_size = real_images.shape[0]
 
+            masks = torch.zeros(batch_size, 1, 256, 256, device=device)
+            side = torch.randint(0, 5, (1,)).item() 
+            
+            if side == 1: masks[:, :, :, :CONDITION_WIDTH] = 1     # Left
+            elif side == 2: masks[:, :, :, -CONDITION_WIDTH:] = 1  # Right
+            elif side == 3: masks[:, :, :CONDITION_WIDTH, :] = 1   # Top
+            elif side == 4: masks[:, :, -CONDITION_WIDTH:, :] = 1  # Bottom
+            
+            conditions = real_images * masks
+
             for _ in range(CRITIC_ITERATIONS):
                 noise = torch.randn(batch_size, LATENT_DIM, 1, 1, device=device)
-                fake_images = generator(noise)
+                
+                fake_images = generator(noise, conditions, masks)
 
-                critic_real = critic(real_images).reshape(-1)
-                critic_fake = critic(fake_images.detach()).reshape(-1)
+                critic_real = critic(real_images, conditions, masks).reshape(-1)
+                critic_fake = critic(fake_images.detach(), conditions, masks).reshape(-1)
 
-                gp = compute_gradient_penalty(critic, real_images, fake_images)
+                gp = compute_gradient_penalty(critic, real_images, fake_images, conditions, masks)
 
-                loss_critic = (
-                    -(torch.mean(critic_real) - torch.mean(critic_fake)) 
-                    + LAMBDA_GP * gp
-                )
+                loss_critic = -(torch.mean(critic_real) - torch.mean(critic_fake)) + LAMBDA_GP * gp
 
                 critic.zero_grad()
                 loss_critic.backward()
                 opt_critic.step()
 
-            output = critic(fake_images).reshape(-1)
-            loss_gen = -torch.mean(output)
+            output = critic(fake_images, conditions, masks).reshape(-1)
+            
+            l1_penalty = F.l1_loss(fake_images * masks, conditions)
+            
+            loss_gen = -torch.mean(output) + (10.0 * l1_penalty)
 
             generator.zero_grad()
             loss_gen.backward()
@@ -129,7 +123,8 @@ def train_wgan(generator, critic, dataloader, device):
                 loop.set_description(f"Epoch [{epoch}/{EPOCHS}]")
                 loop.set_postfix(
                     Loss_Critic=loss_critic.item(), 
-                    Loss_Gen=loss_gen.item()
+                    Loss_Gen=loss_gen.item(),
+                    L1_Border=l1_penalty.item()
                 )
                 
     return generator, critic

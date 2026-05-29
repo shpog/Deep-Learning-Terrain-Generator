@@ -61,13 +61,9 @@ class TerrainGenerator(nn.Module):
         )
 
     def forward(self, noise, condition, mask):
-        # 1. Combine condition and mask
         x = torch.cat([condition, mask], dim=1) 
-        # 2. Encode to feature vector
         features = self.encoder(x)
-        # 3. Inject noise in the bottleneck
         bottleneck = torch.cat([features, noise], dim=1)
-        # 4. Decode to terrain image
         return self.decoder(bottleneck)
 
 
@@ -79,7 +75,6 @@ class TerrainCritic(nn.Module):
         super(TerrainCritic, self).__init__()
         
         self.model = nn.Sequential(
-            # Input is now: Image (3) + Condition (3) + Mask (1) = 7 channels
             nn.Conv2d(img_channels + 4, 16, kernel_size=4, stride=2, padding=1),
             nn.LeakyReLU(0.2, inplace=True),
             
@@ -93,7 +88,6 @@ class TerrainCritic(nn.Module):
         )
 
     def _block(self, in_channels, out_channels, kernel_size, stride, padding):
-        # Your original instance norm block
         return nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False),
             nn.InstanceNorm2d(out_channels, affine=True),
@@ -101,11 +95,9 @@ class TerrainCritic(nn.Module):
         )
 
     def forward(self, image, condition, mask):
-        # Evaluate the image strictly in the context of its border conditions
         x = torch.cat([image, condition, mask], dim=1)
         return self.model(x)
 
-# initialize_weights remains entirely unchanged
 def initialize_weights(model):
     for m in model.modules():
         if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
