@@ -88,6 +88,14 @@ def train_wgan(generator, critic, dataloader, device):
 
     for epoch in range(EPOCHS):
         loop = tqdm(dataloader, leave=True)
+        if epoch % 10 == 0:
+                generator.eval()
+                with torch.no_grad():
+                    fixed_noise = torch.randn(16, LATENT_DIM, 1, 1, device=device)
+                    fake_checkpoint = generator(fixed_noise).cpu()
+                    elevation_only = fake_checkpoint[:, 0:1, :, :] 
+                    vutils.save_image(elevation_only, f"checkpoint_epoch_{epoch}.png", nrow=4, normalize=True)
+                generator.train()
         for batch_idx, real_images in enumerate(loop):
             real_images = real_images.to(device)
             batch_size = real_images.shape[0]
@@ -123,13 +131,5 @@ def train_wgan(generator, critic, dataloader, device):
                     Loss_Critic=loss_critic.item(), 
                     Loss_Gen=loss_gen.item()
                 )
-            if epoch % 10 == 0:
-                generator.eval()
-                with torch.no_grad():
-                    fixed_noise = torch.randn(16, LATENT_DIM, 1, 1, device=device)
-                    fake_checkpoint = generator(fixed_noise).cpu()
-                    elevation_only = fake_checkpoint[:, 0:1, :, :] 
-                    vutils.save_image(elevation_only, f"checkpoint_epoch_{epoch}.png", nrow=4, normalize=True)
-                generator.train()
                 
     return generator, critic
