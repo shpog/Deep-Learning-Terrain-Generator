@@ -113,7 +113,7 @@ def train_wgan(generator, critic, dataloader, device):
             
             l1_penalty = F.l1_loss(fake_images * masks, conditions)
             
-            loss_gen = -torch.mean(output) + (10.0 * l1_penalty)
+            loss_gen = -torch.mean(output) + (1.0 * l1_penalty)
 
             generator.zero_grad()
             loss_gen.backward()
