@@ -111,7 +111,11 @@ def train_wgan(generator, critic, dataloader, device):
 
             output = critic(fake_images, conditions, masks).reshape(-1)
             
-            l1_penalty = F.l1_loss(fake_images * masks, conditions)
+            mask_pixels = masks == 1
+            if mask_pixels.any():
+                l1_penalty = F.l1_loss(fake_images[mask_pixels], conditions[mask_pixels])
+            else:
+                l1_penalty = torch.tensor(0.0, device=device)
             
             loss_gen = -torch.mean(output) + (1.0 * l1_penalty)
 

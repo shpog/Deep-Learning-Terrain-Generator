@@ -10,62 +10,65 @@ class TerrainGenerator(nn.Module):
     and decodes it back to a 256x256 terrain map.
     """
     def __init__(self, latent_dim=128, img_channels=3):
-        super(TerrainGenerator, self).__init__()
+        super().__init__()
         self.latent_dim = latent_dim
         
-        # ENCODER: Input [Batch, 4, 256, 256] -> Output [Batch, 512, 1, 1]
-        self.encoder = nn.Sequential(
-            nn.Conv2d(img_channels + 1, 32, kernel_size=4, stride=2, padding=1, bias=False), # 128x128
-            nn.LeakyReLU(0.2, inplace=True),
-            self._conv_block(32, 64, 4, 2, 1),   # 64x64
-            self._conv_block(64, 128, 4, 2, 1),  # 32x32
-            self._conv_block(128, 256, 4, 2, 1), # 16x16
-            self._conv_block(256, 512, 4, 2, 1), # 8x8
-            self._conv_block(512, 512, 4, 2, 1), # 4x4
-            nn.Conv2d(512, 512, kernel_size=4, stride=1, padding=0, bias=False), # 1x1
-            nn.LeakyReLU(0.2, inplace=True)
-        )
+        self.enc1 = self._conv_block(img_channels + 1, 32)   # -> 128x128
+        self.enc2 = self._conv_block(32, 64)                 # -> 64x64
+        self.enc3 = self._conv_block(64, 128)                # -> 32x32
+        self.enc4 = self._conv_block(128, 256)               # -> 16x16
+        self.enc5 = self._conv_block(256, 512)               # -> 8x8
         
-        # DECODER: Input [Batch, 512 + latent_dim, 1, 1] -> Output [Batch, 3, 256, 256]
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(512 + latent_dim, 512, kernel_size=4, stride=1, padding=0, bias=False), # 4x4
-            nn.BatchNorm2d(512),
-            nn.ReLU(inplace=True),
-            
-            self._block(512, 256, 3, 1, 1), # 8x8
-            self._block(256, 128, 3, 1, 1), # 16x16
-            self._block(128, 64, 3, 1, 1),  # 32x32
-            self._block(64, 32, 3, 1, 1),   # 64x64
-            self._block(32, 16, 3, 1, 1),   # 128x128
-            
-            # Final Layer: 128x128 -> 256x256
+        self.bottleneck = self._conv_block(512, 512)         
+        
+        self.dec0 = self._up_block(512 + latent_dim, 512)    # -> 8x8
+        self.dec1 = self._up_block(512 + 512, 256)           # -> 16x16
+        self.dec2 = self._up_block(256 + 256, 128)           # -> 32x32
+        self.dec3 = self._up_block(128 + 128, 64)            # -> 64x64
+        self.dec4 = self._up_block(64 + 64, 32)              # -> 128x128
+        
+        # WARSTWA KOŃCOWA
+        self.final = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
-            nn.Conv2d(16, img_channels, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(32 + 32, img_channels, kernel_size=3, stride=1, padding=1),
             nn.Sigmoid()
         )
 
-    def _conv_block(self, in_channels, out_channels, kernel_size, stride, padding):
+    def _conv_block(self, in_c, out_c):
         return nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False),
-            nn.BatchNorm2d(out_channels),
+            nn.Conv2d(in_c, out_c, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(out_c),
             nn.LeakyReLU(0.2, inplace=True)
         )
 
-    def _block(self, in_channels, out_channels, kernel_size, stride, padding):
-        # Your original upsampling block
+    def _up_block(self, in_c, out_c):
         return nn.Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
-            nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False),
-            nn.BatchNorm2d(out_channels),
+            nn.Conv2d(in_c, out_c, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(out_c),
             nn.ReLU(inplace=True)
         )
 
     def forward(self, noise, condition, mask):
         x = torch.cat([condition, mask], dim=1) 
-        features = self.encoder(x)
-        features = torch.nn.functional.dropout(features, p=0.5, training=self.training)
-        bottleneck = torch.cat([features, noise], dim=1)
-        return self.decoder(bottleneck)
+        e1 = self.enc1(x)
+        e2 = self.enc2(e1)
+        e3 = self.enc3(e2)
+        e4 = self.enc4(e3)
+        e5 = self.enc5(e4)
+        
+        b = self.bottleneck(e5)
+        noise_spatial = noise.expand(-1, -1, b.shape[2], b.shape[3])
+        b_noise = torch.cat([b, noise_spatial], dim=1)
+        
+        d0 = self.dec0(b_noise)
+        d1 = self.dec1(torch.cat([d0, e5], dim=1))
+        d2 = self.dec2(torch.cat([d1, e4], dim=1))
+        d3 = self.dec3(torch.cat([d2, e3], dim=1))
+        d4 = self.dec4(torch.cat([d3, e2], dim=1))
+        
+        out = self.final(torch.cat([d4, e1], dim=1))
+        return out
 
 
 class TerrainCritic(nn.Module):
