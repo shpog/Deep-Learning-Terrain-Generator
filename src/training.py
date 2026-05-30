@@ -111,7 +111,7 @@ def train_wgan(generator, critic, dataloader, device):
 
             output = critic(fake_images, conditions, masks).reshape(-1)
             
-            mask_pixels = masks == 1
+            mask_pixels = (masks == 1).expand_as(fake_images)
             if mask_pixels.any():
                 l1_penalty = F.l1_loss(fake_images[mask_pixels], conditions[mask_pixels])
             else:
