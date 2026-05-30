@@ -63,6 +63,7 @@ class TerrainGenerator(nn.Module):
     def forward(self, noise, condition, mask):
         x = torch.cat([condition, mask], dim=1) 
         features = self.encoder(x)
+        features = torch.nn.functional.dropout(features, p=0.5, training=self.training)
         bottleneck = torch.cat([features, noise], dim=1)
         return self.decoder(bottleneck)
 

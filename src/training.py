@@ -13,7 +13,7 @@ import torchvision.utils as vutils
 import torch.nn.functional as F
 
 from config import (
-    LEARNING_RATE, BETA1, BETA2, CRITIC_ITERATIONS, LAMBDA_GP, LATENT_DIM, CONDITION_WIDTH
+    LR_GEN, LR_CRITIC, BETA1, BETA2, CRITIC_ITERATIONS, LAMBDA_GP, LATENT_DIM, CONDITION_WIDTH
 )
 
 def compute_gradient_penalty(critic, real_samples, fake_samples, conditions, masks):
@@ -52,10 +52,10 @@ def train_wgan(generator, critic, dataloader, device):
     """
     Executes the main WGAN-GP training loop with conditional stitching.
     """
-    opt_gen = optim.Adam(generator.parameters(), lr=LEARNING_RATE, betas=(BETA1, BETA2))
-    opt_critic = optim.Adam(critic.parameters(), lr=LEARNING_RATE, betas=(BETA1, BETA2))
+    opt_gen = optim.Adam(generator.parameters(), lr=LR_GEN, betas=(BETA1, BETA2))
+    opt_critic = optim.Adam(critic.parameters(), lr=LR_CRITIC, betas=(BETA1, BETA2))
 
-    from config import EPOCHS 
+    from config import EPOCHS
 
     real_batch = next(iter(dataloader)).to(device)
     fixed_batch_size = min(16, real_batch.shape[0])
