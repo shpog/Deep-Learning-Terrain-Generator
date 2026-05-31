@@ -74,6 +74,7 @@ class TerrainDataset(Dataset):
             self.data = np.load(self.filepath, mmap_mode='r')
 
         MIN_DELTA = 0.05
+        MIN_MEAN = 0.15
 
         while True:
             y = np.random.randint(0, self.height - TILE_SIZE)
@@ -83,8 +84,9 @@ class TerrainDataset(Dataset):
             elevation = patch_numpy[0]
             
             delta = np.max(elevation) - np.min(elevation)
+            mean_elev = np.mean(elevation)
 
-            if np.mean(elevation) > 0.01 and delta > MIN_DELTA: 
+            if mean_elev > MIN_MEAN and delta > MIN_DELTA: 
                 break
                 
         patch_tensor = torch.from_numpy(np.array(patch_numpy).copy()).float()

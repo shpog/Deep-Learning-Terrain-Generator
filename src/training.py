@@ -84,12 +84,11 @@ def train_wgan(generator, critic, dataloader, device):
             batch_size = real_images.shape[0]
 
             masks = torch.zeros(batch_size, 1, 256, 256, device=device)
-            side = torch.randint(0, 5, (1,)).item() 
             
-            if side == 1: masks[:, :, :, :CONDITION_WIDTH] = 1     # Left
-            elif side == 2: masks[:, :, :, -CONDITION_WIDTH:] = 1  # Right
-            elif side == 3: masks[:, :, :CONDITION_WIDTH, :] = 1   # Top
-            elif side == 4: masks[:, :, -CONDITION_WIDTH:, :] = 1  # Bottom
+            if torch.rand(1).item() > 0.5: masks[:, :, :, :CONDITION_WIDTH] = 1
+            if torch.rand(1).item() > 0.5: masks[:, :, :, -CONDITION_WIDTH:] = 1
+            if torch.rand(1).item() > 0.5: masks[:, :, :CONDITION_WIDTH, :] = 1
+            if torch.rand(1).item() > 0.5: masks[:, :, -CONDITION_WIDTH:, :] = 1
             
             conditions = real_images * masks
 
