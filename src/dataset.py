@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-from config import PROCESSED_DATA_DIR, RESOLUTION, TILE_SIZE
+from config import PROCESSED_DATA_DIR, RESOLUTION, TILE_SIZE, EPOCHS
 
 class TerrainDataset(Dataset):
     """
@@ -28,7 +28,7 @@ class TerrainDataset(Dataset):
         height (int): Total pixel height of the global map.
         width (int): Total pixel width of the global map.
     """
-    def __init__(self, epoch_size=10000):
+    def __init__(self, epoch_size=10000, current_epoch=0):
         """
         Initializes the Dataset and opens the memory-mapped file.
 
@@ -38,6 +38,8 @@ class TerrainDataset(Dataset):
                 one full pass. Defaults to 10000.
         """
         self.epoch_size = epoch_size
+        self.current_epoch = current_epoch
+        self.max_epochs = EPOCHS
         self.filepath = PROCESSED_DATA_DIR / f"worldclim_{RESOLUTION}_full.npy"
         
         temp_data = np.load(self.filepath, mmap_mode='r')
@@ -99,7 +101,7 @@ class TerrainDataset(Dataset):
         patch_tensor = torch.from_numpy(np.array(patch_numpy).copy()).float()
         return patch_tensor
 
-def get_dataloader(batch_size=32, num_workers=0):
+def get_dataloader(batch_size=32, num_workers=0, current_epoch=0):
     """
     Creates the PyTorch DataLoader for the TerrainDataset.
 
