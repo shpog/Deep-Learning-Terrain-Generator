@@ -76,6 +76,8 @@ class TerrainDataset(Dataset):
         MIN_DELTA = 0.05
         MIN_MEAN = 0.15
 
+        drop_chance = 0.9 * (self.current_epoch / self.max_epochs)
+
         while True:
             y = np.random.randint(0, self.height - TILE_SIZE)
             x = np.random.randint(0, self.width - TILE_SIZE)
@@ -86,8 +88,13 @@ class TerrainDataset(Dataset):
             delta = np.max(elevation) - np.min(elevation)
             mean_elev = np.mean(elevation)
 
-            if mean_elev > MIN_MEAN and delta > MIN_DELTA: 
-                break
+            is_flat_or_water = (mean_elev <= MIN_MEAN) or (delta <= MIN_DELTA)
+
+            if not is_flat_or_water:
+                break # Zawsze przepuszczaj góry i zróżnicowany teren
+            else:
+                if np.random.rand() > drop_chance:
+                    break
                 
         patch_tensor = torch.from_numpy(np.array(patch_numpy).copy()).float()
         return patch_tensor

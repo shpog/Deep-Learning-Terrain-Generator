@@ -37,9 +37,6 @@ def main():
     print(f"--- Terrain Generator AI ---")
     print(f"Using device: {device} with {gpu_count} GPU(s)")
 
-    print("\nInitializing DataLoader...")
-    dataloader = get_dataloader(batch_size=BATCH_SIZE, num_workers=4) 
-    
     print("Initializing Generator and Critic...")
     generator = TerrainGenerator(latent_dim=LATENT_DIM, img_channels=IMG_CHANNELS)
     critic = TerrainCritic(img_channels=IMG_CHANNELS)
@@ -61,8 +58,7 @@ def main():
     print(f"\nStarting WGAN-GP Training for {EPOCHS} Epochs...")
     generator, critic = train_wgan(
         generator=generator, 
-        critic=critic, 
-        dataloader=dataloader, 
+        critic=critic,
         device=device
     )
     

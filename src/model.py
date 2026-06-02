@@ -22,21 +22,21 @@ class TerrainGenerator(nn.Module):
         self.bottleneck = self._conv_block(512, 512)         
         
         self.dec0 = self._up_block(512 + latent_dim, 512)    # -> 8x8
-        self.dec1 = self._up_block(512 + 512, 256)           # -> 16x16
-        self.dec2 = self._up_block(256 + 256, 128)           # -> 32x32
+        self.dec1 = self._up_block(512 + 512 + latent_dim, 256)           # -> 16x16
+        self.dec2 = self._up_block(256 + 256 + latent_dim, 128)           # -> 32x32
         self.dec3 = self._up_block(128 + 128, 64)            # -> 64x64
         self.dec4 = self._up_block(64 + 64, 32)              # -> 128x128
         
         # WARSTWA KOŃCOWA
         self.final = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
-            nn.Conv2d(32 + 32, img_channels, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(32 + 32, img_channels, kernel_size=3, stride=1, padding=1, padding_mode='reflect'),
             nn.Sigmoid()
         )
 
     def _conv_block(self, in_c, out_c):
         return nn.Sequential(
-            nn.Conv2d(in_c, out_c, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.Conv2d(in_c, out_c, kernel_size=4, stride=2, padding=1, padding_mode='reflect', bias=False),
             nn.BatchNorm2d(out_c),
             nn.LeakyReLU(0.2, inplace=True)
         )
@@ -44,7 +44,7 @@ class TerrainGenerator(nn.Module):
     def _up_block(self, in_c, out_c):
         return nn.Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
-            nn.Conv2d(in_c, out_c, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.Conv2d(in_c, out_c, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False),
             nn.BatchNorm2d(out_c),
             nn.ReLU(inplace=True)
         )
@@ -58,12 +58,16 @@ class TerrainGenerator(nn.Module):
         e5 = self.enc5(e4)
         
         b = self.bottleneck(e5)
-        noise_spatial = noise.expand(-1, -1, b.shape[2], b.shape[3])
-        b_noise = torch.cat([b, noise_spatial], dim=1)
         
-        d0 = self.dec0(b_noise)
-        d1 = self.dec1(torch.cat([d0, e5], dim=1))
-        d2 = self.dec2(torch.cat([d1, e4], dim=1))
+        noise_b = noise.expand(-1, -1, b.shape[2], b.shape[3])
+        d0 = self.dec0(torch.cat([b, noise_b], dim=1))
+        
+        noise_e5 = noise.expand(-1, -1, e5.shape[2], e5.shape[3])
+        d1 = self.dec1(torch.cat([d0, e5, noise_e5], dim=1))
+        
+        noise_e4 = noise.expand(-1, -1, e4.shape[2], e4.shape[3])
+        d2 = self.dec2(torch.cat([d1, e4, noise_e4], dim=1))
+        
         d3 = self.dec3(torch.cat([d2, e3], dim=1))
         d4 = self.dec4(torch.cat([d3, e2], dim=1))
         

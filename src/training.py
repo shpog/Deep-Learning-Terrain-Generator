@@ -12,8 +12,9 @@ from tqdm import tqdm
 import torchvision.utils as vutils
 import torch.nn.functional as F
 
+from dataset import get_dataloader
 from config import (
-    LR_GEN, LR_CRITIC, BETA1, BETA2, CRITIC_ITERATIONS, LAMBDA_GP, LATENT_DIM, CONDITION_WIDTH
+    LR_GEN, LR_CRITIC, BETA1, BETA2, CRITIC_ITERATIONS, LAMBDA_GP, LATENT_DIM, CONDITION_WIDTH, BATCH_SIZE
 )
 
 def compute_gradient_penalty(critic, real_samples, fake_samples, conditions, masks):
@@ -48,7 +49,7 @@ def compute_gradient_penalty(critic, real_samples, fake_samples, conditions, mas
     
     return gradient_penalty
 
-def train_wgan(generator, critic, dataloader, device):
+def train_wgan(generator, critic, device):
     """
     Executes the main WGAN-GP training loop with conditional stitching.
     """
@@ -57,7 +58,10 @@ def train_wgan(generator, critic, dataloader, device):
 
     from config import EPOCHS
 
-    real_batch = next(iter(dataloader)).to(device)
+    init_dataloader = get_dataloader(batch_size=BATCH_SIZE, num_workers=0, current_epoch=0)
+    real_batch = next(iter(init_dataloader)).to(device)
+    del init_dataloader
+
     fixed_batch_size = min(16, real_batch.shape[0])
     
     fixed_noise = torch.randn(fixed_batch_size, LATENT_DIM, 1, 1, device=device)
@@ -68,6 +72,8 @@ def train_wgan(generator, critic, dataloader, device):
 
     for epoch in range(EPOCHS):
         
+        dataloader = get_dataloader(batch_size=BATCH_SIZE, num_workers=4, current_epoch=epoch)
+
         # --- VISUAL CHECKPOINTING ---
         if epoch % 10 == 0:
             generator.eval()
@@ -85,10 +91,21 @@ def train_wgan(generator, critic, dataloader, device):
 
             masks = torch.zeros(batch_size, 1, 256, 256, device=device)
             
-            if torch.rand(1).item() > 0.5: masks[:, :, :, :CONDITION_WIDTH] = 1
-            if torch.rand(1).item() > 0.5: masks[:, :, :, -CONDITION_WIDTH:] = 1
-            if torch.rand(1).item() > 0.5: masks[:, :, :CONDITION_WIDTH, :] = 1
-            if torch.rand(1).item() > 0.5: masks[:, :, -CONDITION_WIDTH:, :] = 1
+            rand_val = torch.rand(1).item()
+            if rand_val < 0.6:
+                num_edges = 1
+            elif rand_val < 0.9:
+                num_edges = 2
+            else:
+                num_edges = 3
+                
+            chosen_edges = torch.randperm(4)[:num_edges]
+            
+            for edge in chosen_edges:
+                if edge == 0:   masks[:, :, :, :CONDITION_WIDTH] = 1
+                elif edge == 1: masks[:, :, :, -CONDITION_WIDTH:] = 1
+                elif edge == 2: masks[:, :, :CONDITION_WIDTH, :] = 1
+                elif edge == 3: masks[:, :, -CONDITION_WIDTH:, :] = 1
             
             conditions = real_images * masks
 
@@ -116,7 +133,7 @@ def train_wgan(generator, critic, dataloader, device):
             else:
                 l1_penalty = torch.tensor(0.0, device=device)
             
-            loss_gen = -torch.mean(output) + (1.0 * l1_penalty)
+            loss_gen = -torch.mean(output) + (2.0 * l1_penalty)
 
             generator.zero_grad()
             loss_gen.backward()
