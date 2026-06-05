@@ -91,21 +91,17 @@ def train_wgan(generator, critic, device):
 
             masks = torch.zeros(batch_size, 1, 256, 256, device=device)
             
-            rand_val = torch.rand(1).item()
-            if rand_val < 0.6:
-                num_edges = 1
-            elif rand_val < 0.9:
-                num_edges = 2
-            else:
-                num_edges = 3
-                
-            chosen_edges = torch.randperm(4)[:num_edges]
+            # Losujemy liczbę krawędzi do zamaskowania: od 0 do 4
+            num_edges = torch.randint(0, 5, (1,)).item()
             
-            for edge in chosen_edges:
-                if edge == 0:   masks[:, :, :, :CONDITION_WIDTH] = 1
-                elif edge == 1: masks[:, :, :, -CONDITION_WIDTH:] = 1
-                elif edge == 2: masks[:, :, :CONDITION_WIDTH, :] = 1
-                elif edge == 3: masks[:, :, -CONDITION_WIDTH:, :] = 1
+            if num_edges > 0:
+                chosen_edges = torch.randperm(4)[:num_edges]
+                
+                for edge in chosen_edges:
+                    if edge == 0:   masks[:, :, :, :CONDITION_WIDTH] = 1
+                    elif edge == 1: masks[:, :, :, -CONDITION_WIDTH:] = 1
+                    elif edge == 2: masks[:, :, :CONDITION_WIDTH, :] = 1
+                    elif edge == 3: masks[:, :, -CONDITION_WIDTH:, :] = 1
             
             conditions = real_images * masks
 
@@ -133,7 +129,7 @@ def train_wgan(generator, critic, device):
             else:
                 l1_penalty = torch.tensor(0.0, device=device)
             
-            loss_gen = -torch.mean(output) + (10.0 * l1_penalty)
+            loss_gen = -torch.mean(output) + (0.5 * l1_penalty)
 
             generator.zero_grad()
             loss_gen.backward()

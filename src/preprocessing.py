@@ -96,11 +96,15 @@ def clean_and_normalize(array, nodata_val, fill_value=0.0):
     """
     valid_mask = (array != nodata_val) & ~np.isnan(array)
     
-    min_val = np.min(array[valid_mask])
-    max_val = np.max(array[valid_mask])
+    shifted_array = array[valid_mask] - np.min(array[valid_mask]) 
+    transformed = np.sqrt(shifted_array)
+
+    min_val = np.min(transformed)
+    max_val = np.max(transformed)
     
     processed_array = np.full(array.shape, fill_value, dtype=np.float32)
-    processed_array[valid_mask] = (array[valid_mask] - min_val) / (max_val - min_val)
+    normalized_0_1 = (transformed - min_val) / (max_val - min_val)
+    processed_array[valid_mask] = (normalized_0_1 * 2.0) - 1.0
     
     return processed_array
 

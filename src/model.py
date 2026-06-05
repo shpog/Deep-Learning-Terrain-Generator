@@ -31,7 +31,7 @@ class TerrainGenerator(nn.Module):
         self.final = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
             nn.Conv2d(32 + 32, img_channels, kernel_size=3, stride=1, padding=1, padding_mode='reflect'),
-            nn.Sigmoid()
+            nn.Tanh()
         )
 
     def _conv_block(self, in_c, out_c):

@@ -75,8 +75,8 @@ class TerrainDataset(Dataset):
         if self.data is None:
             self.data = np.load(self.filepath, mmap_mode='r')
 
-        MIN_DELTA = 0.05
-        MIN_MEAN = 0.15
+        MIN_DELTA = 0.45
+        MIN_MEAN = -0.2
 
         flatland_keep_chance = 0.30 - 0.25 * (self.current_epoch / self.max_epochs)
 
@@ -90,7 +90,7 @@ class TerrainDataset(Dataset):
             delta = np.max(elevation) - np.min(elevation)
             mean_elev = np.mean(elevation)
 
-            if mean_elev < 0.02 and delta < 0.02:
+            if mean_elev < -0.75 and delta < -0.75:
                 if np.random.rand() < 0.05:
                     break 
                     
@@ -101,6 +101,11 @@ class TerrainDataset(Dataset):
             else:
                 break
                 
+        if np.random.rand() > 0.5:
+            patch_numpy = np.flip(patch_numpy, axis=1)
+        if np.random.rand() > 0.5:
+            patch_numpy = np.flip(patch_numpy, axis=2)
+
         patch_tensor = torch.from_numpy(np.array(patch_numpy).copy()).float()
         return patch_tensor
 
