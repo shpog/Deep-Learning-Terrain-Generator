@@ -81,7 +81,7 @@ def train_wgan(generator, critic, device):
                 fake_checkpoint = generator(fixed_noise, fixed_conditions, fixed_masks).cpu()
                 # Assuming channel 0 is Elevation
                 elevation_only = fake_checkpoint[:, 0:1, :, :] 
-                vutils.save_image(elevation_only, f"checkpoint_epoch_{epoch}.png", nrow=4, normalize=True)
+                vutils.save_image(elevation_only, f"checkpoint_epoch_{epoch}.png", nrow=4, normalize=True, value_range=(-1, 1))
             generator.train()
 
         loop = tqdm(dataloader, leave=True)
@@ -129,7 +129,7 @@ def train_wgan(generator, critic, device):
             else:
                 l1_penalty = torch.tensor(0.0, device=device)
             
-            loss_gen = -torch.mean(output) + (0.5 * l1_penalty)
+            loss_gen = -torch.mean(output)# + (0.5 * l1_penalty)
 
             generator.zero_grad()
             loss_gen.backward()

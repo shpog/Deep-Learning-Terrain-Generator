@@ -19,10 +19,10 @@ class TerrainGenerator(nn.Module):
         self.enc4 = self._conv_block(128, 256)               # -> 16x16
         self.enc5 = self._conv_block(256, 512)               # -> 8x8
         
-        self.bottleneck = self._conv_block(512, 512)         
-        
-        self.dec0 = self._up_block(512 + latent_dim, 512)    # -> 8x8
-        self.dec1 = self._up_block(512 + 512 + latent_dim, 256)           # -> 16x16
+        self.bottleneck = self._conv_block(512, 512, use_dropout=True)       
+
+        self.dec0 = self._up_block(512 + latent_dim, 512, use_dropout=True)   # -> 8x8  
+        self.dec1 = self._up_block(512 + 512 + latent_dim, 256, use_dropout=True)           # -> 16x16
         self.dec2 = self._up_block(256 + 256 + latent_dim, 128)           # -> 32x32
         self.dec3 = self._up_block(128 + 128, 64)            # -> 64x64
         self.dec4 = self._up_block(64 + 64, 32)              # -> 128x128
@@ -34,20 +34,26 @@ class TerrainGenerator(nn.Module):
             nn.Tanh()
         )
 
-    def _conv_block(self, in_c, out_c):
-        return nn.Sequential(
+    def _conv_block(self, in_c, out_c, use_dropout=False):
+        layers = [
             nn.Conv2d(in_c, out_c, kernel_size=4, stride=2, padding=1, padding_mode='reflect', bias=False),
             nn.BatchNorm2d(out_c),
             nn.LeakyReLU(0.2, inplace=True)
-        )
+        ]
+        if use_dropout:
+            layers.append(nn.Dropout(0.3))
+        return nn.Sequential(*layers)
 
-    def _up_block(self, in_c, out_c):
-        return nn.Sequential(
+    def _up_block(self, in_c, out_c, use_dropout=False):
+        layers = [
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
             nn.Conv2d(in_c, out_c, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False),
             nn.BatchNorm2d(out_c),
             nn.ReLU(inplace=True)
-        )
+        ]
+        if use_dropout:
+            layers.append(nn.Dropout(0.3))
+        return nn.Sequential(*layers)
 
     def forward(self, noise, condition, mask):
         x = torch.cat([condition, mask], dim=1) 

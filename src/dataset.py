@@ -90,9 +90,8 @@ class TerrainDataset(Dataset):
             delta = np.max(elevation) - np.min(elevation)
             mean_elev = np.mean(elevation)
 
-            if mean_elev < -0.75 and delta < -0.75:
-                if np.random.rand() < 0.05:
-                    break 
+            if mean_elev < -0.75:
+                continue 
                     
             elif delta <= MIN_DELTA or mean_elev <= MIN_MEAN:
                 if np.random.rand() < flatland_keep_chance:
