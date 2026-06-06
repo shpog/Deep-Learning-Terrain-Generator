@@ -129,7 +129,17 @@ def train_wgan(generator, critic, device):
             else:
                 l1_penalty = torch.tensor(0.0, device=device)
             
-            loss_gen = -torch.mean(output)# + (0.5 * l1_penalty)
+            from config import LAMBDA_L1
+
+            output = critic(fake_images, conditions, masks).reshape(-1)
+
+            mask_pixels = (masks == 1).expand_as(fake_images)
+            if mask_pixels.any():
+                l1_penalty = F.l1_loss(fake_images[mask_pixels], conditions[mask_pixels])
+            else:
+                l1_penalty = torch.tensor(0.0, device=device)
+
+            loss_gen = -torch.mean(output) + (LAMBDA_L1 * l1_penalty)
 
             generator.zero_grad()
             loss_gen.backward()
