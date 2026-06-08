@@ -91,17 +91,28 @@ def train_wgan(generator, critic, device):
 
             masks = torch.zeros(batch_size, 1, 256, 256, device=device)
             
-            # Losujemy liczbę krawędzi do zamaskowania: od 0 do 4
+            fade_in = torch.linspace(1.0, 0.0, CONDITION_WIDTH, device=device)
+            fade_out = torch.linspace(0.0, 1.0, CONDITION_WIDTH, device=device)
+
+            fade_left = fade_in.view(1, 1, 1, CONDITION_WIDTH)
+            fade_right = fade_out.view(1, 1, 1, CONDITION_WIDTH)
+            fade_top = fade_in.view(1, 1, CONDITION_WIDTH, 1)
+            fade_bottom = fade_out.view(1, 1, CONDITION_WIDTH, 1)
+
             num_edges = torch.randint(0, 5, (1,)).item()
-            
+
             if num_edges > 0:
                 chosen_edges = torch.randperm(4)[:num_edges]
                 
                 for edge in chosen_edges:
-                    if edge == 0:   masks[:, :, :, :CONDITION_WIDTH] = 1
-                    elif edge == 1: masks[:, :, :, -CONDITION_WIDTH:] = 1
-                    elif edge == 2: masks[:, :, :CONDITION_WIDTH, :] = 1
-                    elif edge == 3: masks[:, :, -CONDITION_WIDTH:, :] = 1
+                    if edge == 0:   
+                        masks[:, :, :, :CONDITION_WIDTH] = torch.max(masks[:, :, :, :CONDITION_WIDTH], fade_left)
+                    elif edge == 1: 
+                        masks[:, :, :, -CONDITION_WIDTH:] = torch.max(masks[:, :, :, -CONDITION_WIDTH:], fade_right)
+                    elif edge == 2: 
+                        masks[:, :, :CONDITION_WIDTH, :] = torch.max(masks[:, :, :CONDITION_WIDTH, :], fade_top)
+                    elif edge == 3: 
+                        masks[:, :, -CONDITION_WIDTH:, :] = torch.max(masks[:, :, -CONDITION_WIDTH:, :], fade_bottom)
             
             conditions = real_images * masks
 

@@ -35,7 +35,7 @@ LR_CRITIC = 4e-4
 BETA1 = 0.0 # Adam optimizer beta1
 BETA2 = 0.9 # Adam optimizer beta2
 CONDITION_WIDTH = 32
-LAMBDA_L1 = 50
+LAMBDA_L1 = 0.5
 
 # WGAN-Specific Settings
 CRITIC_ITERATIONS = 5

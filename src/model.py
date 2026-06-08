@@ -83,7 +83,7 @@ class TerrainGenerator(nn.Module):
     def _conv_block(self, in_c, out_c, use_dropout=False):
         layers = [
             nn.Conv2d(in_c, out_c, kernel_size=4, stride=2, padding=1, padding_mode='reflect', bias=False),
-            nn.BatchNorm2d(out_c),
+            nn.InstanceNorm2d(out_c, affine=True)
             nn.LeakyReLU(0.2, inplace=True)
         ]
         if use_dropout:
