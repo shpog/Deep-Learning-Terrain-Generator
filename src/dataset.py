@@ -154,3 +154,54 @@ def get_dataloader(batch_size=32, num_workers=0, current_epoch=0):
     )
     
     return dataloader
+
+class MacroDataset(Dataset):
+    """
+    Dataset dla modelu bazowego (Makro). 
+    Losuje kafelki z globalnej mapy 10-minutowej.
+    """
+    def __init__(self, epoch_size=5000):
+        self.epoch_size = epoch_size
+        self.filepath = PROCESSED_DATA_DIR / "worldclim_10m_full.npy"
+        
+        temp_data = np.load(self.filepath, mmap_mode='r')
+        self.channels, self.height, self.width = temp_data.shape
+        del temp_data 
+        
+        self.data = None
+
+    def __len__(self):
+        return self.epoch_size
+
+    def __getitem__(self, idx):
+        if self.data is None:
+            self.data = np.load(self.filepath, mmap_mode='r')
+
+        while True:
+            y = np.random.randint(0, self.height - TILE_SIZE)
+            x = np.random.randint(0, self.width - TILE_SIZE)
+            
+            patch_numpy = self.data[:, y:y+TILE_SIZE, x:x+TILE_SIZE]
+            elevation = patch_numpy[0]
+            
+            # Obliczamy różnicę wysokości na kafelku
+            delta = np.max(elevation) - np.min(elevation)
+            
+            # Jeśli teren ma zróżnicowanie (jest lądem/wybrzeżem) akceptujemy.
+            # Dajemy też 10% szansy na przepuszczenie płaskiego oceanu, 
+            # by sieć wiedziała, że oceany istnieją.
+            if delta > 0.1 or np.random.rand() < 0.1:
+                break
+                
+        # Augmentacja (odbicia lustrzane)
+        if np.random.rand() > 0.5:
+            patch_numpy = np.flip(patch_numpy, axis=1)
+        if np.random.rand() > 0.5:
+            patch_numpy = np.flip(patch_numpy, axis=2)
+
+        patch_tensor = torch.from_numpy(np.array(patch_numpy).copy()).float()
+        return patch_tensor
+
+def get_macro_dataloader(batch_size=32, num_workers=0):
+    dataset = MacroDataset()
+    return DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)

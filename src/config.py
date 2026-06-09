@@ -22,7 +22,7 @@ PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 # DATA & IMAGE SETTINGS
-RESOLUTION = "2.5m"
+RESOLUTION = "10m"
 TILE_SIZE = 256 
 IMG_CHANNELS = 3
 

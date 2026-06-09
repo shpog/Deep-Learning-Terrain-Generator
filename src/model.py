@@ -150,3 +150,63 @@ def initialize_weights(model):
             nn.init.normal_(m.weight.data, 0.0, 0.02)
             if m.bias is not None:
                 nn.init.constant_(m.bias.data, 0)
+
+class MacroGenerator(nn.Module):
+    """
+    Bezwarunkowy generator globalnych kontynentów.
+    Z wektora szumu [Batch, Latent, 1, 1] generuje mapę [Batch, 3, 256, 256].
+    """
+    def __init__(self, latent_dim=128, img_channels=3):
+        super().__init__()
+        self.net = nn.Sequential(
+            # Input: [Batch, latent_dim, 1, 1]
+            self._block(latent_dim, 512, 4, 1, 0),         # -> 4x4
+            self._block(512, 256, 4, 2, 1),                # -> 8x8
+            self._block(256, 128, 4, 2, 1),                # -> 16x16
+            self._block(128, 64, 4, 2, 1),                 # -> 32x32
+            self._block(64, 32, 4, 2, 1),                  # -> 64x64
+            self._block(32, 16, 4, 2, 1),                  # -> 128x128
+            nn.ConvTranspose2d(16, img_channels, kernel_size=4, stride=2, padding=1), # -> 256x256
+            nn.Tanh() # Ograniczenie wartości do [-1, 1]
+        )
+
+    def _block(self, in_c, out_c, kernel, stride, padding):
+        return nn.Sequential(
+            nn.ConvTranspose2d(in_c, out_c, kernel, stride, padding, bias=False),
+            nn.BatchNorm2d(out_c),
+            nn.ReLU(True)
+        )
+
+    def forward(self, noise):
+        return self.net(noise)
+
+
+class MacroCritic(nn.Module):
+    """
+    Krytyk oceniający spójność geograficzną globalnych kafelków Makro.
+    """
+    def __init__(self, img_channels=3):
+        super().__init__()
+        self.net = nn.Sequential(
+            # Input: [Batch, 3, 256, 256]
+            nn.Conv2d(img_channels, 16, 4, 2, 1),          # -> 128x128
+            nn.LeakyReLU(0.2, inplace=True),
+            
+            self._block(16, 32, 4, 2, 1),                  # -> 64x64
+            self._block(32, 64, 4, 2, 1),                  # -> 32x32
+            self._block(64, 128, 4, 2, 1),                 # -> 16x16
+            self._block(128, 256, 4, 2, 1),                # -> 8x8
+            self._block(256, 512, 4, 2, 1),                # -> 4x4
+            
+            nn.Conv2d(512, 1, 4, 1, 0)                     # -> 1x1 (Pojedyncza ocena Krytyka)
+        )
+
+    def _block(self, in_c, out_c, kernel, stride, padding):
+        return nn.Sequential(
+            nn.Conv2d(in_c, out_c, kernel, stride, padding, bias=False),
+            nn.InstanceNorm2d(out_c, affine=True),
+            nn.LeakyReLU(0.2, inplace=True)
+        )
+
+    def forward(self, img):
+        return self.net(img).view(-1) # Zwraca płaski tensor ocen
