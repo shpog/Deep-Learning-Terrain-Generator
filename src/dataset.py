@@ -9,6 +9,7 @@ local RAM is not overwhelmed during training.
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
+import torch.nn.functional as F
 
 from config import PROCESSED_DATA_DIR, RESOLUTION, TILE_SIZE, EPOCHS
 
@@ -106,7 +107,28 @@ class TerrainDataset(Dataset):
             patch_numpy = np.flip(patch_numpy, axis=2)
 
         patch_tensor = torch.from_numpy(np.array(patch_numpy).copy()).float()
-        return patch_tensor
+
+
+        downscale_factor = 8 
+        macro_size = TILE_SIZE // downscale_factor
+        
+        patch_expanded = patch_tensor.unsqueeze(0)
+        
+        downsampled = F.interpolate(
+            patch_expanded, 
+            size=(macro_size, macro_size), 
+            mode='bilinear', 
+            align_corners=False
+        )
+        
+        macro_tensor = F.interpolate(
+            downsampled, 
+            size=(TILE_SIZE, TILE_SIZE), 
+            mode='bicubic', 
+            align_corners=False
+        ).squeeze(0)
+        
+        return patch_tensor, macro_tensor
 
 def get_dataloader(batch_size=32, num_workers=0, current_epoch=0):
     """

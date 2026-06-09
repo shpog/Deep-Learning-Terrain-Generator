@@ -49,31 +49,28 @@ class UpBlockAdaIN(nn.Module):
 
 class TerrainGenerator(nn.Module):
     """
-    Conditional Generator network for the cWGAN-GP.
-    
-    Acts as an Encoder-Decoder. It encodes a 4-channel input (3-channel condition 
-    + 1-channel mask) down to a feature vector, concatenates it with latent noise, 
-    and decodes it back to a 256x256 terrain map.
+    Generator w architekturze kaskadowej (Super-Resolution / Macro-Conditioning).
+    Przyjmuje rozmyty przewodnik (macro_guide) i wektor szumu (przez AdaIN).
     """
     def __init__(self, latent_dim=128, img_channels=3):
         super().__init__()
         self.latent_dim = latent_dim
         
-        self.enc1 = self._conv_block(img_channels + 1, 32)   # -> 128x128
+        # ZMIANA: Enkoder przyjmuje tylko img_channels (czyli 3 kanały macro_guide)
+        self.enc1 = self._conv_block(img_channels, 32)       # -> 128x128
         self.enc2 = self._conv_block(32, 64)                 # -> 64x64
         self.enc3 = self._conv_block(64, 128)                # -> 32x32
         self.enc4 = self._conv_block(128, 256)               # -> 16x16
         self.enc5 = self._conv_block(256, 512)               # -> 8x8
         
-        self.bottleneck = self._conv_block(512, 512, use_dropout=True)    
+        self.bottleneck = self._conv_block(512, 512, use_dropout=True)       
 
-        self.dec0 = self._up_block(512, 512, use_dropout=True)                # -> 8x8  
-        self.dec1 = self._up_block(512 + 512, 256, use_dropout=True)          # -> 16x16
-        self.dec2 = self._up_block(256 + 256, 128)                            # -> 32x32
-        self.dec3 = self._up_block(128 + 128, 64)                             # -> 64x64
-        self.dec4 = self._up_block(64 + 64, 32)                               # -> 128x128
+        self.dec0 = self._up_block(512, 512, use_dropout=True)  
+        self.dec1 = self._up_block(512 + 512, 256, use_dropout=True)
+        self.dec2 = self._up_block(256 + 256, 128)
+        self.dec3 = self._up_block(128 + 128, 64)
+        self.dec4 = self._up_block(64 + 64, 32)
         
-        # WARSTWA KOŃCOWA
         self.final = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
             nn.Conv2d(32 + 32, img_channels, kernel_size=3, stride=1, padding=1, padding_mode='reflect'),
@@ -93,9 +90,8 @@ class TerrainGenerator(nn.Module):
     def _up_block(self, in_c, out_c, use_dropout=False):
         return UpBlockAdaIN(in_c, out_c, self.latent_dim, use_dropout)
 
-    def forward(self, noise, condition, mask):
-        x = torch.cat([condition, mask], dim=1) 
-        e1 = self.enc1(x)
+    def forward(self, noise, macro_guide):
+        e1 = self.enc1(macro_guide)
         e2 = self.enc2(e1)
         e3 = self.enc3(e2)
         e4 = self.enc4(e3)
@@ -114,14 +110,11 @@ class TerrainGenerator(nn.Module):
 
 
 class TerrainCritic(nn.Module):
-    """
-    Conditional Critic network for the cWGAN-GP.
-    """
     def __init__(self, img_channels=3):
         super(TerrainCritic, self).__init__()
         
         self.model = nn.Sequential(
-            nn.Conv2d(img_channels + 4, 16, kernel_size=4, stride=2, padding=1, padding_mode='reflect'),
+            nn.Conv2d(img_channels * 2, 16, kernel_size=4, stride=2, padding=1, padding_mode='reflect'),
             nn.LeakyReLU(0.2, inplace=True),
             
             self._block(16, 32, 4, 2, 1),
@@ -140,8 +133,8 @@ class TerrainCritic(nn.Module):
             nn.LeakyReLU(0.2, inplace=True)
         )
 
-    def forward(self, image, condition, mask):
-        x = torch.cat([image, condition, mask], dim=1)
+    def forward(self, image, macro_guide):
+        x = torch.cat([image, macro_guide], dim=1)
         return self.model(x)
 
 def initialize_weights(model):
