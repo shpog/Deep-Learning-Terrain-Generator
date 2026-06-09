@@ -23,6 +23,9 @@ def compute_gradient_penalty_unconditional(critic, real_samples, fake_samples, d
     Oblicza karę gradientową (Gradient Penalty) dla bezwarunkowego WGAN-GP.
     """
     batch_size = real_samples.size(0)
+
+    fake_samples = fake_samples.detach()
+
     epsilon = torch.rand(batch_size, 1, 1, 1, device=device)
     
     # Liniowa interpolacja między prawdziwymi a wygenerowanymi próbkami
@@ -118,8 +121,15 @@ def main():
                 opt_critic.step()
 
             # --- TRENING GENERATORA ---
-            output = critic(fake_images).reshape(-1)
-            # Generator chce oszukać krytyka (minimalizować zanegowaną ocenę)
+            # 1. Losujemy nowy, czysty szum
+            noise_gen = torch.randn(current_batch_size, LATENT_DIM, 1, 1, device=device)
+            # 2. Generujemy świeże obrazy (z nowym grafem obliczeniowym!)
+            fake_images_gen = generator(noise_gen)
+            
+            # 3. Oceniamy je Krytykiem
+            output = critic(fake_images_gen).reshape(-1)
+            
+            # 4. Obliczamy stratę i robimy backward
             loss_gen = -torch.mean(output)
 
             generator.zero_grad()
