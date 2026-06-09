@@ -17,6 +17,27 @@ from config import (
     LR_GEN, LR_CRITIC, BETA1, BETA2, CRITIC_ITERATIONS, LAMBDA_GP, LATENT_DIM, CONDITION_WIDTH, BATCH_SIZE
 )
 
+def compute_gradient_loss(fake, real, mask):
+    """
+    Oblicza L1 loss dla pochodnych kierunkowych (spadków terenu) 
+    tylko w obszarach objętych maską warunku.
+    """
+    dx_fake = fake[:, :, :, 1:] - fake[:, :, :, :-1]
+    dx_real = real[:, :, :, 1:] - real[:, :, :, :-1]
+    mask_dx = mask[:, :, :, 1:] * mask[:, :, :, :-1] 
+    
+    dy_fake = fake[:, :, 1:, :] - fake[:, :, :-1, :]
+    dy_real = real[:, :, 1:, :] - real[:, :, :-1, :]
+    mask_dy = mask[:, :, 1:, :] * mask[:, :, :-1, :]
+    
+    mask_dx = (mask_dx == 1).expand_as(dx_fake)
+    mask_dy = (mask_dy == 1).expand_as(dy_fake)
+    
+    loss_dx = F.l1_loss(dx_fake[mask_dx], dx_real[mask_dx]) if mask_dx.any() else torch.tensor(0.0, device=fake.device)
+    loss_dy = F.l1_loss(dy_fake[mask_dy], dy_real[mask_dy]) if mask_dy.any() else torch.tensor(0.0, device=fake.device)
+    
+    return loss_dx + loss_dy
+
 def compute_gradient_penalty(critic, real_samples, fake_samples, conditions, masks):
     """
     Calculates the conditional gradient penalty for the cWGAN-GP.
@@ -140,7 +161,7 @@ def train_wgan(generator, critic, device):
             else:
                 l1_penalty = torch.tensor(0.0, device=device)
             
-            from config import LAMBDA_L1
+            from config import LAMBDA_L1, LAMBDA_GRAD
 
             output = critic(fake_images, conditions, masks).reshape(-1)
 
@@ -150,7 +171,9 @@ def train_wgan(generator, critic, device):
             else:
                 l1_penalty = torch.tensor(0.0, device=device)
 
-            loss_gen = -torch.mean(output) + (LAMBDA_L1 * l1_penalty)
+            grad_penalty = compute_gradient_loss(fake_images, conditions, masks)
+
+            loss_gen = -torch.mean(output) + (LAMBDA_L1 * l1_penalty) + (LAMBDA_GRAD * grad_penalty)
 
             generator.zero_grad()
             loss_gen.backward()
@@ -159,9 +182,10 @@ def train_wgan(generator, critic, device):
             if batch_idx % 50 == 0:
                 loop.set_description(f"Epoch [{epoch}/{EPOCHS}]")
                 loop.set_postfix(
-                    Loss_Critic=loss_critic.item(), 
-                    Loss_Gen=loss_gen.item(),
-                    L1_Border=l1_penalty.item()
+                    Loss_C=loss_critic.item(), 
+                    Loss_G=loss_gen.item(),
+                    L1=l1_penalty.item(),
+                    Grad=grad_penalty.item()
                 )
                 
     return generator, critic

@@ -121,7 +121,7 @@ class TerrainCritic(nn.Module):
         super(TerrainCritic, self).__init__()
         
         self.model = nn.Sequential(
-            nn.Conv2d(img_channels + 4, 16, kernel_size=4, stride=2, padding=1),
+            nn.Conv2d(img_channels + 4, 16, kernel_size=4, stride=2, padding=1, padding_mode='reflect'),
             nn.LeakyReLU(0.2, inplace=True),
             
             self._block(16, 32, 4, 2, 1),
@@ -135,7 +135,7 @@ class TerrainCritic(nn.Module):
 
     def _block(self, in_channels, out_channels, kernel_size, stride, padding):
         return nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False),
+            nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, padding_mode='reflect', bias=False),
             nn.InstanceNorm2d(out_channels, affine=True),
             nn.LeakyReLU(0.2, inplace=True)
         )
