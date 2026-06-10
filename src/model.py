@@ -153,32 +153,48 @@ def initialize_weights(model):
 
 class MacroGenerator(nn.Module):
     """
-    Bezwarunkowy generator globalnych kontynentów.
-    Z wektora szumu [Batch, Latent, 1, 1] generuje mapę [Batch, 3, 256, 256].
+    Bezwarunkowy generator wolny od efektu szachownicy.
+    Używa Upsample + Conv2d zamiast ConvTranspose2d.
     """
     def __init__(self, latent_dim=128, img_channels=3):
         super().__init__()
-        self.net = nn.Sequential(
-            # Input: [Batch, latent_dim, 1, 1]
-            self._block(latent_dim, 512, 4, 1, 0),         # -> 4x4
-            self._block(512, 256, 4, 2, 1),                # -> 8x8
-            self._block(256, 128, 4, 2, 1),                # -> 16x16
-            self._block(128, 64, 4, 2, 1),                 # -> 32x32
-            self._block(64, 32, 4, 2, 1),                  # -> 64x64
-            self._block(32, 16, 4, 2, 1),                  # -> 128x128
-            nn.ConvTranspose2d(16, img_channels, kernel_size=4, stride=2, padding=1), # -> 256x256
-            nn.Tanh() # Ograniczenie wartości do [-1, 1]
+        
+        self.start = nn.Sequential(
+            nn.ConvTranspose2d(latent_dim, 512, 4, 1, 0, bias=False),
+            nn.BatchNorm2d(512),
+            nn.ReLU(True)
+        )
+        
+        # Kolejne bloki płynnie powiększają obraz dwukrotnie
+        self.block1 = self._upsample_block(512, 256) # 4x4 -> 8x8
+        self.block2 = self._upsample_block(256, 128) # 8x8 -> 16x16
+        self.block3 = self._upsample_block(128, 64)  # 16x16 -> 32x32
+        self.block4 = self._upsample_block(64, 32)   # 32x32 -> 64x64
+        self.block5 = self._upsample_block(32, 16)   # 64x64 -> 128x128
+        
+        # Finałowy blok do rozmiaru 256x256
+        self.final = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(16, img_channels, kernel_size=3, stride=1, padding=1),
+            nn.Tanh()
         )
 
-    def _block(self, in_c, out_c, kernel, stride, padding):
+    def _upsample_block(self, in_c, out_c):
         return nn.Sequential(
-            nn.ConvTranspose2d(in_c, out_c, kernel, stride, padding, bias=False),
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(in_c, out_c, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(out_c),
             nn.ReLU(True)
         )
 
     def forward(self, noise):
-        return self.net(noise)
+        x = self.start(noise)
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.block3(x)
+        x = self.block4(x)
+        x = self.block5(x)
+        return self.final(x)
 
 
 class MacroCritic(nn.Module):
