@@ -73,21 +73,22 @@
 <div class="genindex-jumpbox">
  <a href="#A"><strong>A</strong></a>
  | <a href="#C"><strong>C</strong></a>
- | <a href="#D"><strong>D</strong></a>
- | <a href="#E"><strong>E</strong></a>
  | <a href="#F"><strong>F</strong></a>
  | <a href="#G"><strong>G</strong></a>
- | <a href="#H"><strong>H</strong></a>
  | <a href="#I"><strong>I</strong></a>
  | <a href="#L"><strong>L</strong></a>
  | <a href="#M"><strong>M</strong></a>
  | <a href="#S"><strong>S</strong></a>
  | <a href="#T"><strong>T</strong></a>
- | <a href="#W"><strong>W</strong></a>
+ | <a href="#U"><strong>U</strong></a>
  
 </div>
 <h2 id="A">A</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="src.html#src.model.AdaIN">AdaIN (class in src.model)</a>
+</li>
+  </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="src.html#src.preprocessing.aggregate_monthly_data">aggregate_monthly_data() (in module src.preprocessing)</a>
 </li>
@@ -97,31 +98,17 @@
 <h2 id="C">C</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="src.html#src.dataset.TerrainDataset.channels">channels (src.dataset.TerrainDataset attribute)</a>
-</li>
       <li><a href="src.html#src.preprocessing.clean_and_normalize">clean_and_normalize() (in module src.preprocessing)</a>
+</li>
+      <li><a href="src.html#src.training.compute_gradient_loss">compute_gradient_loss() (in module src.training)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="src.html#src.training.compute_gradient_penalty">compute_gradient_penalty() (in module src.training)</a>
 </li>
+      <li><a href="src.html#src.train_macro.compute_gradient_penalty_unconditional">compute_gradient_penalty_unconditional() (in module src.train_macro)</a>
+</li>
       <li><a href="src.html#src.preprocessing.create_terrain_tensor">create_terrain_tensor() (in module src.preprocessing)</a>
-</li>
-  </ul></td>
-</tr></table>
-
-<h2 id="D">D</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="src.html#src.dataset.TerrainDataset.data">data (src.dataset.TerrainDataset attribute)</a>
-</li>
-  </ul></td>
-</tr></table>
-
-<h2 id="E">E</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="src.html#src.dataset.TerrainDataset.epoch_size">epoch_size (src.dataset.TerrainDataset attribute)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -129,14 +116,18 @@
 <h2 id="F">F</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="src.html#src.dataset.TerrainDataset.filepath">filepath (src.dataset.TerrainDataset attribute)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="src.html#src.model.TerrainCritic.forward">forward() (src.model.TerrainCritic method)</a>
+      <li><a href="src.html#src.model.AdaIN.forward">forward() (src.model.AdaIN method)</a>
 
       <ul>
+        <li><a href="src.html#src.model.MacroCritic.forward">(src.model.MacroCritic method)</a>
+</li>
+        <li><a href="src.html#src.model.MacroGenerator.forward">(src.model.MacroGenerator method)</a>
+</li>
+        <li><a href="src.html#src.model.TerrainCritic.forward">(src.model.TerrainCritic method)</a>
+</li>
         <li><a href="src.html#src.model.TerrainGenerator.forward">(src.model.TerrainGenerator method)</a>
+</li>
+        <li><a href="src.html#src.model.UpBlockAdaIN.forward">(src.model.UpBlockAdaIN method)</a>
 </li>
       </ul></li>
   </ul></td>
@@ -148,12 +139,8 @@
       <li><a href="src.html#src.dataset.get_dataloader">get_dataloader() (in module src.dataset)</a>
 </li>
   </ul></td>
-</tr></table>
-
-<h2 id="H">H</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="src.html#src.dataset.TerrainDataset.height">height (src.dataset.TerrainDataset attribute)</a>
+      <li><a href="src.html#src.dataset.get_macro_dataloader">get_macro_dataloader() (in module src.dataset)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -169,10 +156,6 @@
 <h2 id="L">L</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="src.html#src.model.TerrainGenerator.latent_dim">latent_dim (src.model.TerrainGenerator attribute)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="src.html#src.preprocessing.load_geotiff">load_geotiff() (in module src.preprocessing)</a>
 </li>
   </ul></td>
@@ -181,12 +164,16 @@
 <h2 id="M">M</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="src.html#src.main.main">main() (in module src.main)</a>
+      <li><a href="src.html#src.model.MacroCritic">MacroCritic (class in src.model)</a>
 </li>
-      <li><a href="src.html#src.model.TerrainCritic.model">model (src.model.TerrainCritic attribute)</a>
+      <li><a href="src.html#src.dataset.MacroDataset">MacroDataset (class in src.dataset)</a>
+</li>
+      <li><a href="src.html#src.model.MacroGenerator">MacroGenerator (class in src.model)</a>
+</li>
+      <li><a href="src.html#src.main.main">main() (in module src.main)</a>
 
       <ul>
-        <li><a href="src.html#src.model.TerrainGenerator.model">(src.model.TerrainGenerator attribute)</a>
+        <li><a href="src.html#src.train_macro.main">(in module src.train_macro)</a>
 </li>
       </ul></li>
       <li>
@@ -205,9 +192,9 @@
 </li>
         <li><a href="src.html#module-src.preprocessing">src.preprocessing</a>
 </li>
-        <li><a href="src.html#module-src.training">src.training</a>
+        <li><a href="src.html#module-src.train_macro">src.train_macro</a>
 </li>
-        <li><a href="src.html#module-src.utils">src.utils</a>
+        <li><a href="src.html#module-src.training">src.training</a>
 </li>
       </ul></li>
   </ul></td>
@@ -261,17 +248,17 @@
 </li>
       </ul></li>
       <li>
+    src.train_macro
+
+      <ul>
+        <li><a href="src.html#module-src.train_macro">module</a>
+</li>
+      </ul></li>
+      <li>
     src.training
 
       <ul>
         <li><a href="src.html#module-src.training">module</a>
-</li>
-      </ul></li>
-      <li>
-    src.utils
-
-      <ul>
-        <li><a href="src.html#module-src.utils">module</a>
 </li>
       </ul></li>
   </ul></td>
@@ -293,10 +280,10 @@
   </ul></td>
 </tr></table>
 
-<h2 id="W">W</h2>
+<h2 id="U">U</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="src.html#src.dataset.TerrainDataset.width">width (src.dataset.TerrainDataset attribute)</a>
+      <li><a href="src.html#src.model.UpBlockAdaIN">UpBlockAdaIN (class in src.model)</a>
 </li>
   </ul></td>
 </tr></table>

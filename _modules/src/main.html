@@ -69,15 +69,7 @@
            <div itemprop="articleBody">
              
   <h1>Source code for src.main</h1><div class="highlight"><pre>
-<span></span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Execution Entry Point for Terrain Generation Training.</span>
-
-<span class="sd">This script ties together the dataset loaders, the neural network models, </span>
-<span class="sd">and the WGAN-GP training loop. It handles hardware detection (including </span>
-<span class="sd">multi-GPU cluster scaling via DataParallel) and saves the final weights.</span>
-<span class="sd">&quot;&quot;&quot;</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
@@ -86,23 +78,20 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">model</span><span class="w"> </span><span class="kn">import</span> <span class="n">TerrainGenerator</span><span class="p">,</span> <span class="n">TerrainCritic</span><span class="p">,</span> <span class="n">initialize_weights</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">training</span><span class="w"> </span><span class="kn">import</span> <span class="n">train_wgan</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">config</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">BATCH_SIZE</span><span class="p">,</span> <span class="n">EPOCHS</span><span class="p">,</span> <span class="n">LATENT_DIM</span><span class="p">,</span> <span class="n">IMG_CHANNELS</span><span class="p">,</span> <span class="n">MODELS_DIR</span>
-<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">config</span><span class="w"> </span><span class="kn">import</span> <span class="n">BATCH_SIZE</span><span class="p">,</span> <span class="n">EPOCHS</span><span class="p">,</span> <span class="n">LATENT_DIM</span><span class="p">,</span> <span class="n">IMG_CHANNELS</span><span class="p">,</span> <span class="n">MODELS_DIR</span>
+
 
 <div class="viewcode-block" id="main">
 <a class="viewcode-back" href="../../src.html#src.main.main">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Initializes hardware, models, and begins the training loop.</span>
+<span class="sd">    The primary execution script for training the Conditional High-Resolution Terrain Generator.</span>
 
-<span class="sd">    Workflow:</span>
-<span class="sd">        1. Detects available GPUs and initializes CUDA if available.</span>
-<span class="sd">        2. Loads the memory-mapped TerrainDataset via a multiprocessing DataLoader.</span>
-<span class="sd">        3. Initializes the Generator and Critic networks.</span>
-<span class="sd">        4. Wraps models in torch.nn.DataParallel if &gt;1 GPU is detected.</span>
-<span class="sd">        5. Executes the WGAN-GP training loop for the specified number of epochs.</span>
-<span class="sd">        6. Safely unwraps and saves the final model weights to the disk.</span>
+<span class="sd">    This function acts as the main entry point for the training pipeline. It detects</span>
+<span class="sd">    available hardware (applying PyTorch&#39;s DataParallel if multiple GPUs are found),</span>
+<span class="sd">    initializes the conditional TerrainGenerator and TerrainCritic networks, applies</span>
+<span class="sd">    standard weight initialization, and triggers the WGAN-GP training loop. Finally,</span>
+<span class="sd">    it ensures that the trained model weights are safely written to the models directory.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cuda&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
     <span class="n">gpu_count</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">device_count</span><span class="p">()</span>
@@ -110,46 +99,41 @@
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;--- Terrain Generator AI ---&quot;</span><span class="p">)</span>
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Using device: </span><span class="si">{</span><span class="n">device</span><span class="si">}</span><span class="s2"> with </span><span class="si">{</span><span class="n">gpu_count</span><span class="si">}</span><span class="s2"> GPU(s)&quot;</span><span class="p">)</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Initializing DataLoader...&quot;</span><span class="p">)</span>
-    <span class="n">dataloader</span> <span class="o">=</span> <span class="n">get_dataloader</span><span class="p">(</span><span class="n">batch_size</span><span class="o">=</span><span class="n">BATCH_SIZE</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span> 
-    
     <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Initializing Generator and Critic...&quot;</span><span class="p">)</span>
     <span class="n">generator</span> <span class="o">=</span> <span class="n">TerrainGenerator</span><span class="p">(</span><span class="n">latent_dim</span><span class="o">=</span><span class="n">LATENT_DIM</span><span class="p">,</span> <span class="n">img_channels</span><span class="o">=</span><span class="n">IMG_CHANNELS</span><span class="p">)</span>
     <span class="n">critic</span> <span class="o">=</span> <span class="n">TerrainCritic</span><span class="p">(</span><span class="n">img_channels</span><span class="o">=</span><span class="n">IMG_CHANNELS</span><span class="p">)</span>
-    
+
     <span class="n">initialize_weights</span><span class="p">(</span><span class="n">generator</span><span class="p">)</span>
     <span class="n">initialize_weights</span><span class="p">(</span><span class="n">critic</span><span class="p">)</span>
-    
+
     <span class="k">if</span> <span class="n">gpu_count</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
         <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Activating DataParallel across </span><span class="si">{</span><span class="n">gpu_count</span><span class="si">}</span><span class="s2"> GPUs!&quot;</span><span class="p">)</span>
         <span class="n">generator</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">DataParallel</span><span class="p">(</span><span class="n">generator</span><span class="p">)</span>
         <span class="n">critic</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">DataParallel</span><span class="p">(</span><span class="n">critic</span><span class="p">)</span>
-        
+
     <span class="n">generator</span> <span class="o">=</span> <span class="n">generator</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
     <span class="n">critic</span> <span class="o">=</span> <span class="n">critic</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
-    
+
     <span class="n">initialize_weights</span><span class="p">(</span><span class="n">generator</span><span class="p">)</span>
     <span class="n">initialize_weights</span><span class="p">(</span><span class="n">critic</span><span class="p">)</span>
-    
+
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Starting WGAN-GP Training for </span><span class="si">{</span><span class="n">EPOCHS</span><span class="si">}</span><span class="s2"> Epochs...&quot;</span><span class="p">)</span>
-    <span class="n">generator</span><span class="p">,</span> <span class="n">critic</span> <span class="o">=</span> <span class="n">train_wgan</span><span class="p">(</span>
-        <span class="n">generator</span><span class="o">=</span><span class="n">generator</span><span class="p">,</span> 
-        <span class="n">critic</span><span class="o">=</span><span class="n">critic</span><span class="p">,</span> 
-        <span class="n">dataloader</span><span class="o">=</span><span class="n">dataloader</span><span class="p">,</span> 
-        <span class="n">device</span><span class="o">=</span><span class="n">device</span>
-    <span class="p">)</span>
-    
+    <span class="n">generator</span><span class="p">,</span> <span class="n">critic</span> <span class="o">=</span> <span class="n">train_wgan</span><span class="p">(</span><span class="n">generator</span><span class="o">=</span><span class="n">generator</span><span class="p">,</span> <span class="n">critic</span><span class="o">=</span><span class="n">critic</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+
     <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Training complete! Saving model weights...&quot;</span><span class="p">)</span>
-    
+
     <span class="n">MODELS_DIR</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    
-    <span class="n">gen_weights</span> <span class="o">=</span> <span class="n">generator</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span> <span class="k">if</span> <span class="n">gpu_count</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">generator</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
+
+    <span class="n">gen_weights</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">generator</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span> <span class="k">if</span> <span class="n">gpu_count</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">generator</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
+    <span class="p">)</span>
     <span class="n">crit_weights</span> <span class="o">=</span> <span class="n">critic</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span> <span class="k">if</span> <span class="n">gpu_count</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">critic</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
-    
+
     <span class="n">torch</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">gen_weights</span><span class="p">,</span> <span class="n">MODELS_DIR</span> <span class="o">/</span> <span class="s2">&quot;generator.pth&quot;</span><span class="p">)</span>
     <span class="n">torch</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">crit_weights</span><span class="p">,</span> <span class="n">MODELS_DIR</span> <span class="o">/</span> <span class="s2">&quot;critic.pth&quot;</span><span class="p">)</span>
-    
+
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Models safely saved to: </span><span class="si">{</span><span class="n">MODELS_DIR</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
 
 
 <span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>

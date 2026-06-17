@@ -1,0 +1,289 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.train_macro &mdash; Terrain Generation 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            Terrain Generation
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">src</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">Terrain Generation</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">src.train_macro</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.train_macro</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.optim</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">optim</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tqdm</span><span class="w"> </span><span class="kn">import</span> <span class="n">tqdm</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.utils</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">vutils</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">config</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">BATCH_SIZE</span><span class="p">,</span>
+    <span class="n">EPOCHS</span><span class="p">,</span>
+    <span class="n">LATENT_DIM</span><span class="p">,</span>
+    <span class="n">IMG_CHANNELS</span><span class="p">,</span>
+    <span class="n">MODELS_DIR</span><span class="p">,</span>
+    <span class="n">LR_GEN</span><span class="p">,</span>
+    <span class="n">LR_CRITIC</span><span class="p">,</span>
+    <span class="n">BETA1</span><span class="p">,</span>
+    <span class="n">BETA2</span><span class="p">,</span>
+    <span class="n">CRITIC_ITERATIONS</span><span class="p">,</span>
+    <span class="n">LAMBDA_GP</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataset</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_macro_dataloader</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">model</span><span class="w"> </span><span class="kn">import</span> <span class="n">MacroGenerator</span><span class="p">,</span> <span class="n">MacroCritic</span><span class="p">,</span> <span class="n">initialize_weights</span>
+
+
+<div class="viewcode-block" id="compute_gradient_penalty_unconditional">
+<a class="viewcode-back" href="../../src.html#src.train_macro.compute_gradient_penalty_unconditional">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">compute_gradient_penalty_unconditional</span><span class="p">(</span><span class="n">critic</span><span class="p">,</span> <span class="n">real_samples</span><span class="p">,</span> <span class="n">fake_samples</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Calculates the gradient penalty for the unconditional Wasserstein GAN (WGAN-GP).</span>
+
+<span class="sd">    This enforces the 1-Lipschitz constraint by evaluating the critic&#39;s gradients</span>
+<span class="sd">    on random interpolations between real and generated macro terrain samples,</span>
+<span class="sd">    without any external conditioning.</span>
+
+<span class="sd">    :param critic: The unconditional macro critic (discriminator) network.</span>
+<span class="sd">    :type critic: torch.nn.Module</span>
+<span class="sd">    :param real_samples: A batch of real low-resolution macro terrain tensors.</span>
+<span class="sd">    :type real_samples: torch.Tensor</span>
+<span class="sd">    :param fake_samples: A batch of generated low-resolution macro terrain tensors.</span>
+<span class="sd">    :type fake_samples: torch.Tensor</span>
+<span class="sd">    :param device: The PyTorch device used for computation.</span>
+<span class="sd">    :type device: torch.device</span>
+<span class="sd">    :return: The calculated unconditional gradient penalty.</span>
+<span class="sd">    :rtype: torch.Tensor</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">batch_size</span> <span class="o">=</span> <span class="n">real_samples</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="n">fake_samples</span> <span class="o">=</span> <span class="n">fake_samples</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
+
+    <span class="n">epsilon</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+
+    <span class="n">interpolated</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">epsilon</span> <span class="o">*</span> <span class="n">real_samples</span> <span class="o">+</span> <span class="p">((</span><span class="mi">1</span> <span class="o">-</span> <span class="n">epsilon</span><span class="p">)</span> <span class="o">*</span> <span class="n">fake_samples</span><span class="p">)</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">requires_grad_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">critic</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">DataParallel</span><span class="p">):</span>
+        <span class="n">critic_interpolated</span> <span class="o">=</span> <span class="n">critic</span><span class="o">.</span><span class="n">module</span><span class="p">(</span><span class="n">interpolated</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">critic_interpolated</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">interpolated</span><span class="p">)</span>
+
+    <span class="n">gradients</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">grad</span><span class="p">(</span>
+        <span class="n">outputs</span><span class="o">=</span><span class="n">critic_interpolated</span><span class="p">,</span>
+        <span class="n">inputs</span><span class="o">=</span><span class="n">interpolated</span><span class="p">,</span>
+        <span class="n">grad_outputs</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">critic_interpolated</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">),</span>
+        <span class="n">create_graph</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">retain_graph</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">only_inputs</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="n">gradients</span> <span class="o">=</span> <span class="n">gradients</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">gradient_norm</span> <span class="o">=</span> <span class="n">gradients</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">gradient_penalty</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">((</span><span class="n">gradient_norm</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">gradient_penalty</span></div>
+
+
+
+<div class="viewcode-block" id="main">
+<a class="viewcode-back" href="../../src.html#src.train_macro.main">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    The primary execution script for training the unconditional Macro-level Terrain Generator.</span>
+
+<span class="sd">    Initializes the macro generator and critic networks, configures the optimizers,</span>
+<span class="sd">    and runs the WGAN-GP training loop over the specified number of epochs.</span>
+<span class="sd">    It supports multi-GPU training via DataParallel, generates periodic visual</span>
+<span class="sd">    checkpoints, and safely saves the model weights upon completion.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cuda&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;cpu&quot;</span><span class="p">)</span>
+    <span class="n">gpu_count</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">device_count</span><span class="p">()</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;--- Trening Modelu Makro (Kontynenty) ---&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Urządzenie: </span><span class="si">{</span><span class="n">device</span><span class="si">}</span><span class="s2"> | Liczba GPU: </span><span class="si">{</span><span class="n">gpu_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">generator</span> <span class="o">=</span> <span class="n">MacroGenerator</span><span class="p">(</span><span class="n">latent_dim</span><span class="o">=</span><span class="n">LATENT_DIM</span><span class="p">,</span> <span class="n">img_channels</span><span class="o">=</span><span class="n">IMG_CHANNELS</span><span class="p">)</span>
+    <span class="n">critic</span> <span class="o">=</span> <span class="n">MacroCritic</span><span class="p">(</span><span class="n">img_channels</span><span class="o">=</span><span class="n">IMG_CHANNELS</span><span class="p">)</span>
+
+    <span class="n">initialize_weights</span><span class="p">(</span><span class="n">generator</span><span class="p">)</span>
+    <span class="n">initialize_weights</span><span class="p">(</span><span class="n">critic</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">gpu_count</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">generator</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">DataParallel</span><span class="p">(</span><span class="n">generator</span><span class="p">)</span>
+        <span class="n">critic</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">DataParallel</span><span class="p">(</span><span class="n">critic</span><span class="p">)</span>
+
+    <span class="n">generator</span> <span class="o">=</span> <span class="n">generator</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">critic</span> <span class="o">=</span> <span class="n">critic</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+
+    <span class="n">opt_gen</span> <span class="o">=</span> <span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">generator</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">LR_GEN</span><span class="p">,</span> <span class="n">betas</span><span class="o">=</span><span class="p">(</span><span class="n">BETA1</span><span class="p">,</span> <span class="n">BETA2</span><span class="p">))</span>
+    <span class="n">opt_critic</span> <span class="o">=</span> <span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">critic</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">LR_CRITIC</span><span class="p">,</span> <span class="n">betas</span><span class="o">=</span><span class="p">(</span><span class="n">BETA1</span><span class="p">,</span> <span class="n">BETA2</span><span class="p">))</span>
+
+    <span class="n">dataloader</span> <span class="o">=</span> <span class="n">get_macro_dataloader</span><span class="p">(</span><span class="n">batch_size</span><span class="o">=</span><span class="n">BATCH_SIZE</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+
+    <span class="n">fixed_noise</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="n">LATENT_DIM</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Rozpoczynamy pętlę treningową...&quot;</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">EPOCHS</span><span class="p">):</span>
+
+        <span class="k">if</span> <span class="n">epoch</span> <span class="o">%</span> <span class="mi">5</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">generator</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+                <span class="n">fake_checkpoint</span> <span class="o">=</span> <span class="n">generator</span><span class="p">(</span><span class="n">fixed_noise</span><span class="p">)</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
+                <span class="n">elevation_only</span> <span class="o">=</span> <span class="n">fake_checkpoint</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:]</span>
+                <span class="n">vutils</span><span class="o">.</span><span class="n">save_image</span><span class="p">(</span>
+                    <span class="n">elevation_only</span><span class="p">,</span>
+                    <span class="sa">f</span><span class="s2">&quot;macro_checkpoint_epoch_</span><span class="si">{</span><span class="n">epoch</span><span class="si">}</span><span class="s2">.png&quot;</span><span class="p">,</span>
+                    <span class="n">nrow</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+                    <span class="n">normalize</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">value_range</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">)</span>
+            <span class="n">generator</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+
+        <span class="n">loop</span> <span class="o">=</span> <span class="n">tqdm</span><span class="p">(</span><span class="n">dataloader</span><span class="p">,</span> <span class="n">leave</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">batch_idx</span><span class="p">,</span> <span class="n">real_images</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">loop</span><span class="p">):</span>
+            <span class="n">real_images</span> <span class="o">=</span> <span class="n">real_images</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+            <span class="n">current_batch_size</span> <span class="o">=</span> <span class="n">real_images</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">CRITIC_ITERATIONS</span><span class="p">):</span>
+                <span class="n">noise</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">current_batch_size</span><span class="p">,</span> <span class="n">LATENT_DIM</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+                <span class="n">fake_images</span> <span class="o">=</span> <span class="n">generator</span><span class="p">(</span><span class="n">noise</span><span class="p">)</span>
+
+                <span class="n">critic_real</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">real_images</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">critic_fake</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">fake_images</span><span class="o">.</span><span class="n">detach</span><span class="p">())</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+                <span class="n">gp</span> <span class="o">=</span> <span class="n">compute_gradient_penalty_unconditional</span><span class="p">(</span>
+                    <span class="n">critic</span><span class="p">,</span> <span class="n">real_images</span><span class="p">,</span> <span class="n">fake_images</span><span class="p">,</span> <span class="n">device</span>
+                <span class="p">)</span>
+
+                <span class="n">loss_critic</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="o">-</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">critic_real</span><span class="p">)</span> <span class="o">-</span> <span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">critic_fake</span><span class="p">))</span>
+                    <span class="o">+</span> <span class="n">LAMBDA_GP</span> <span class="o">*</span> <span class="n">gp</span>
+                <span class="p">)</span>
+
+                <span class="n">critic</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+                <span class="n">loss_critic</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+                <span class="n">opt_critic</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+
+            <span class="n">noise_gen</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">current_batch_size</span><span class="p">,</span> <span class="n">LATENT_DIM</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+            <span class="n">fake_images_gen</span> <span class="o">=</span> <span class="n">generator</span><span class="p">(</span><span class="n">noise_gen</span><span class="p">)</span>
+
+            <span class="n">output</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">fake_images_gen</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+            <span class="n">loss_gen</span> <span class="o">=</span> <span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+
+            <span class="n">generator</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+            <span class="n">loss_gen</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+            <span class="n">opt_gen</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+
+            <span class="k">if</span> <span class="n">batch_idx</span> <span class="o">%</span> <span class="mi">20</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">loop</span><span class="o">.</span><span class="n">set_description</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Makro Epoka [</span><span class="si">{</span><span class="n">epoch</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">EPOCHS</span><span class="si">}</span><span class="s2">]&quot;</span><span class="p">)</span>
+                <span class="n">loop</span><span class="o">.</span><span class="n">set_postfix</span><span class="p">(</span><span class="n">Loss_C</span><span class="o">=</span><span class="n">loss_critic</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="n">Loss_G</span><span class="o">=</span><span class="n">loss_gen</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Trening Makro zakończony! Zapisywanie wag...&quot;</span><span class="p">)</span>
+    <span class="n">MODELS_DIR</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="n">gen_weights</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">generator</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span> <span class="k">if</span> <span class="n">gpu_count</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">generator</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
+    <span class="p">)</span>
+    <span class="n">crit_weights</span> <span class="o">=</span> <span class="n">critic</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span> <span class="k">if</span> <span class="n">gpu_count</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">critic</span><span class="o">.</span><span class="n">state_dict</span><span class="p">()</span>
+
+    <span class="n">torch</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">gen_weights</span><span class="p">,</span> <span class="n">MODELS_DIR</span> <span class="o">/</span> <span class="s2">&quot;macro_generator.pth&quot;</span><span class="p">)</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">crit_weights</span><span class="p">,</span> <span class="n">MODELS_DIR</span> <span class="o">/</span> <span class="s2">&quot;macro_critic.pth&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Wagi Makro zapisane bezpiecznie w: </span><span class="si">{</span><span class="n">MODELS_DIR</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Rafal Oszajca, Radoslaw Iskra.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

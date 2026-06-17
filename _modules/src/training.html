@@ -69,55 +69,106 @@
            <div itemprop="articleBody">
              
   <h1>Source code for src.training</h1><div class="highlight"><pre>
-<span></span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Training Loop and Optimization Logic for WGAN-GP.</span>
-
-<span class="sd">This module contains the core algorithms required to train the Terrain Generator.</span>
-<span class="sd">It handles the alternating optimization between the Critic and Generator, and </span>
-<span class="sd">computes the mathematically strict Gradient Penalty required for Wasserstein GANs.</span>
-<span class="sd">&quot;&quot;&quot;</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch.optim</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">optim</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tqdm</span><span class="w"> </span><span class="kn">import</span> <span class="n">tqdm</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.utils</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">vutils</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataset</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_dataloader</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">config</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">LEARNING_RATE</span><span class="p">,</span> <span class="n">BETA1</span><span class="p">,</span> <span class="n">BETA2</span><span class="p">,</span> <span class="n">CRITIC_ITERATIONS</span><span class="p">,</span> <span class="n">LAMBDA_GP</span><span class="p">,</span> <span class="n">LATENT_DIM</span>
+    <span class="n">LR_GEN</span><span class="p">,</span>
+    <span class="n">LR_CRITIC</span><span class="p">,</span>
+    <span class="n">BETA1</span><span class="p">,</span>
+    <span class="n">BETA2</span><span class="p">,</span>
+    <span class="n">CRITIC_ITERATIONS</span><span class="p">,</span>
+    <span class="n">LAMBDA_GP</span><span class="p">,</span>
+    <span class="n">LATENT_DIM</span><span class="p">,</span>
+    <span class="n">CONDITION_WIDTH</span><span class="p">,</span>
+    <span class="n">BATCH_SIZE</span><span class="p">,</span>
 <span class="p">)</span>
+
+
+<div class="viewcode-block" id="compute_gradient_loss">
+<a class="viewcode-back" href="../../src.html#src.training.compute_gradient_loss">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">compute_gradient_loss</span><span class="p">(</span><span class="n">fake</span><span class="p">,</span> <span class="n">real</span><span class="p">,</span> <span class="n">mask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Computes the L1 loss between the spatial gradients of the generated and real images.</span>
+
+<span class="sd">    This function calculates the differences between adjacent pixels along both the</span>
+<span class="sd">    x (horizontal) and y (vertical) axes to evaluate texture and structural fidelity.</span>
+<span class="sd">    The loss is only calculated where the provided mask is valid.</span>
+
+<span class="sd">    :param fake: The generated high-resolution terrain tensor.</span>
+<span class="sd">    :type fake: torch.Tensor</span>
+<span class="sd">    :param real: The ground truth high-resolution terrain tensor.</span>
+<span class="sd">    :type real: torch.Tensor</span>
+<span class="sd">    :param mask: A binary mask indicating valid regions for gradient calculation.</span>
+<span class="sd">    :type mask: torch.Tensor</span>
+<span class="sd">    :return: The sum of the L1 losses for the x and y spatial gradients.</span>
+<span class="sd">    :rtype: torch.Tensor</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">dx_fake</span> <span class="o">=</span> <span class="n">fake</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">fake</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">dx_real</span> <span class="o">=</span> <span class="n">real</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="mi">1</span><span class="p">:]</span> <span class="o">-</span> <span class="n">real</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">mask_dx</span> <span class="o">=</span> <span class="n">mask</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="mi">1</span><span class="p">:]</span> <span class="o">*</span> <span class="n">mask</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="n">dy_fake</span> <span class="o">=</span> <span class="n">fake</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">1</span><span class="p">:,</span> <span class="p">:]</span> <span class="o">-</span> <span class="n">fake</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>
+    <span class="n">dy_real</span> <span class="o">=</span> <span class="n">real</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">1</span><span class="p">:,</span> <span class="p">:]</span> <span class="o">-</span> <span class="n">real</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>
+    <span class="n">mask_dy</span> <span class="o">=</span> <span class="n">mask</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">1</span><span class="p">:,</span> <span class="p">:]</span> <span class="o">*</span> <span class="n">mask</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>
+
+    <span class="n">mask_dx</span> <span class="o">=</span> <span class="p">(</span><span class="n">mask_dx</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">expand_as</span><span class="p">(</span><span class="n">dx_fake</span><span class="p">)</span>
+    <span class="n">mask_dy</span> <span class="o">=</span> <span class="p">(</span><span class="n">mask_dy</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">expand_as</span><span class="p">(</span><span class="n">dy_fake</span><span class="p">)</span>
+
+    <span class="n">loss_dx</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">F</span><span class="o">.</span><span class="n">l1_loss</span><span class="p">(</span><span class="n">dx_fake</span><span class="p">[</span><span class="n">mask_dx</span><span class="p">],</span> <span class="n">dx_real</span><span class="p">[</span><span class="n">mask_dx</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">mask_dx</span><span class="o">.</span><span class="n">any</span><span class="p">()</span>
+        <span class="k">else</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">fake</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">loss_dy</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">F</span><span class="o">.</span><span class="n">l1_loss</span><span class="p">(</span><span class="n">dy_fake</span><span class="p">[</span><span class="n">mask_dy</span><span class="p">],</span> <span class="n">dy_real</span><span class="p">[</span><span class="n">mask_dy</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">mask_dy</span><span class="o">.</span><span class="n">any</span><span class="p">()</span>
+        <span class="k">else</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">fake</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">loss_dx</span> <span class="o">+</span> <span class="n">loss_dy</span></div>
+
+
 
 <div class="viewcode-block" id="compute_gradient_penalty">
 <a class="viewcode-back" href="../../src.html#src.training.compute_gradient_penalty">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">compute_gradient_penalty</span><span class="p">(</span><span class="n">critic</span><span class="p">,</span> <span class="n">real_samples</span><span class="p">,</span> <span class="n">fake_samples</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">compute_gradient_penalty</span><span class="p">(</span><span class="n">critic</span><span class="p">,</span> <span class="n">real_samples</span><span class="p">,</span> <span class="n">fake_samples</span><span class="p">,</span> <span class="n">macro_guides</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Calculates the gradient penalty for the WGAN-GP to enforce 1-Lipschitz continuity.</span>
+<span class="sd">    Calculates the gradient penalty for the conditional Wasserstein GAN (WGAN-GP).</span>
 
-<span class="sd">    The penalty ensures the gradient of the Critic&#39;s output with respect to the </span>
-<span class="sd">    input image has a norm (magnitude) of roughly 1.0. This stabilizes training </span>
-<span class="sd">    and prevents mode collapse.</span>
+<span class="sd">    This enforces the Lipschitz constraint by computing the norm of the critic&#39;s</span>
+<span class="sd">    gradients with respect to random interpolations between real and generated samples,</span>
+<span class="sd">    conditioned on the macro guides.</span>
 
-<span class="sd">    Args:</span>
-<span class="sd">        critic (torch.nn.Module): The initialized Critic network.</span>
-<span class="sd">        real_samples (torch.Tensor): A batch of real terrain maps.</span>
-<span class="sd">        fake_samples (torch.Tensor): A batch of generated fake terrain maps.</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        torch.Tensor: A scalar tensor representing the computed gradient penalty.</span>
+<span class="sd">    :param critic: The conditional critic (discriminator) network.</span>
+<span class="sd">    :type critic: torch.nn.Module</span>
+<span class="sd">    :param real_samples: A batch of real high-resolution terrain tensors.</span>
+<span class="sd">    :type real_samples: torch.Tensor</span>
+<span class="sd">    :param fake_samples: A batch of generated high-resolution terrain tensors.</span>
+<span class="sd">    :type fake_samples: torch.Tensor</span>
+<span class="sd">    :param macro_guides: The low-resolution macro guides conditioning the critic.</span>
+<span class="sd">    :type macro_guides: torch.Tensor</span>
+<span class="sd">    :return: The computed gradient penalty to be added to the critic&#39;s loss.</span>
+<span class="sd">    :rtype: torch.Tensor</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">batch_size</span> <span class="o">=</span> <span class="n">real_samples</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
     <span class="n">current_device</span> <span class="o">=</span> <span class="n">real_samples</span><span class="o">.</span><span class="n">device</span>
-    
     <span class="n">fake_samples</span> <span class="o">=</span> <span class="n">fake_samples</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
-    
     <span class="n">epsilon</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">current_device</span><span class="p">)</span>
-    <span class="n">interpolated</span> <span class="o">=</span> <span class="p">(</span><span class="n">epsilon</span> <span class="o">*</span> <span class="n">real_samples</span> <span class="o">+</span> <span class="p">((</span><span class="mi">1</span> <span class="o">-</span> <span class="n">epsilon</span><span class="p">)</span> <span class="o">*</span> <span class="n">fake_samples</span><span class="p">))</span><span class="o">.</span><span class="n">requires_grad_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
-    
+    <span class="n">interpolated</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">epsilon</span> <span class="o">*</span> <span class="n">real_samples</span> <span class="o">+</span> <span class="p">((</span><span class="mi">1</span> <span class="o">-</span> <span class="n">epsilon</span><span class="p">)</span> <span class="o">*</span> <span class="n">fake_samples</span><span class="p">)</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">requires_grad_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">critic</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">DataParallel</span><span class="p">):</span>
-        <span class="n">critic_interpolated</span> <span class="o">=</span> <span class="n">critic</span><span class="o">.</span><span class="n">module</span><span class="p">(</span><span class="n">interpolated</span><span class="p">)</span>
+        <span class="n">critic_interpolated</span> <span class="o">=</span> <span class="n">critic</span><span class="o">.</span><span class="n">module</span><span class="p">(</span><span class="n">interpolated</span><span class="p">,</span> <span class="n">macro_guides</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="n">critic_interpolated</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">interpolated</span><span class="p">)</span>
-    
+        <span class="n">critic_interpolated</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">interpolated</span><span class="p">,</span> <span class="n">macro_guides</span><span class="p">)</span>
+
     <span class="n">gradients</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">grad</span><span class="p">(</span>
         <span class="n">outputs</span><span class="o">=</span><span class="n">critic_interpolated</span><span class="p">,</span>
         <span class="n">inputs</span><span class="o">=</span><span class="n">interpolated</span><span class="p">,</span>
@@ -126,59 +177,90 @@
         <span class="n">retain_graph</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="n">only_inputs</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
     <span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
-    
+
     <span class="n">gradients</span> <span class="o">=</span> <span class="n">gradients</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
     <span class="n">gradient_norm</span> <span class="o">=</span> <span class="n">gradients</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-    <span class="n">gradient_penalty</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">((</span><span class="n">gradient_norm</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
-    
-    <span class="k">return</span> <span class="n">gradient_penalty</span></div>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">((</span><span class="n">gradient_norm</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span></div>
+
 
 
 <div class="viewcode-block" id="train_wgan">
 <a class="viewcode-back" href="../../src.html#src.training.train_wgan">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">train_wgan</span><span class="p">(</span><span class="n">generator</span><span class="p">,</span> <span class="n">critic</span><span class="p">,</span> <span class="n">dataloader</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">train_wgan</span><span class="p">(</span><span class="n">generator</span><span class="p">,</span> <span class="n">critic</span><span class="p">,</span> <span class="n">device</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Executes the main WGAN-GP training loop.</span>
+<span class="sd">    Executes the WGAN-GP training loop for the conditional high-resolution terrain generator.</span>
 
-<span class="sd">    The loop strictly follows the WGAN rule of updating the Critic multiple </span>
-<span class="sd">    times (defined by CRITIC_ITERATIONS) for every single Generator update. </span>
+<span class="sd">    This function orchestrates the adversarial training process, updating the critic</span>
+<span class="sd">    multiple times per generator update. It calculates critic loss (with gradient penalty)</span>
+<span class="sd">    and generator loss (supplemented by an L1 penalty), while periodically saving</span>
+<span class="sd">    checkpoint images of the generated elevation data.</span>
 
-<span class="sd">    Args:</span>
-<span class="sd">        generator (torch.nn.Module): The initialized TerrainGenerator network.</span>
-<span class="sd">        critic (torch.nn.Module): The initialized TerrainCritic network.</span>
-<span class="sd">        dataloader (torch.utils.data.DataLoader): The DataLoader providing real terrain patches.</span>
-<span class="sd">        device (torch.device): The primary computation device (e.g., &#39;cuda&#39; or &#39;cpu&#39;).</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        tuple: A tuple containing the fully trained networks:</span>
-<span class="sd">            - torch.nn.Module: The updated Generator.</span>
-<span class="sd">            - torch.nn.Module: The updated Critic.</span>
+<span class="sd">    :param generator: The conditional terrain generator network.</span>
+<span class="sd">    :type generator: torch.nn.Module</span>
+<span class="sd">    :param critic: The conditional terrain critic network.</span>
+<span class="sd">    :type critic: torch.nn.Module</span>
+<span class="sd">    :param device: The PyTorch device (CPU or CUDA) to perform training on.</span>
+<span class="sd">    :type device: torch.device</span>
+<span class="sd">    :return: A tuple containing the fully trained generator and critic networks.</span>
+<span class="sd">    :rtype: tuple(torch.nn.Module, torch.nn.Module)</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">opt_gen</span> <span class="o">=</span> <span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">generator</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">LEARNING_RATE</span><span class="p">,</span> <span class="n">betas</span><span class="o">=</span><span class="p">(</span><span class="n">BETA1</span><span class="p">,</span> <span class="n">BETA2</span><span class="p">))</span>
-    <span class="n">opt_critic</span> <span class="o">=</span> <span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">critic</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">LEARNING_RATE</span><span class="p">,</span> <span class="n">betas</span><span class="o">=</span><span class="p">(</span><span class="n">BETA1</span><span class="p">,</span> <span class="n">BETA2</span><span class="p">))</span>
+    <span class="n">opt_gen</span> <span class="o">=</span> <span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">generator</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">LR_GEN</span><span class="p">,</span> <span class="n">betas</span><span class="o">=</span><span class="p">(</span><span class="n">BETA1</span><span class="p">,</span> <span class="n">BETA2</span><span class="p">))</span>
+    <span class="n">opt_critic</span> <span class="o">=</span> <span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">critic</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">LR_CRITIC</span><span class="p">,</span> <span class="n">betas</span><span class="o">=</span><span class="p">(</span><span class="n">BETA1</span><span class="p">,</span> <span class="n">BETA2</span><span class="p">))</span>
 
-    <span class="n">generator</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
-    <span class="n">critic</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">config</span><span class="w"> </span><span class="kn">import</span> <span class="n">EPOCHS</span>
 
-    <span class="kn">from</span><span class="w"> </span><span class="nn">config</span><span class="w"> </span><span class="kn">import</span> <span class="n">EPOCHS</span> 
+    <span class="n">init_dataloader</span> <span class="o">=</span> <span class="n">get_dataloader</span><span class="p">(</span>
+        <span class="n">batch_size</span><span class="o">=</span><span class="n">BATCH_SIZE</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">current_epoch</span><span class="o">=</span><span class="mi">0</span>
+    <span class="p">)</span>
+    <span class="n">real_batch</span><span class="p">,</span> <span class="n">macro_batch</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">init_dataloader</span><span class="p">))</span>
+    <span class="n">real_batch</span> <span class="o">=</span> <span class="n">real_batch</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">macro_batch</span> <span class="o">=</span> <span class="n">macro_batch</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+    <span class="k">del</span> <span class="n">init_dataloader</span>
+
+    <span class="n">fixed_batch_size</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="n">real_batch</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">fixed_noise</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">fixed_batch_size</span><span class="p">,</span> <span class="n">LATENT_DIM</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+
+    <span class="n">fixed_macro_guides</span> <span class="o">=</span> <span class="n">macro_batch</span><span class="p">[:</span><span class="n">fixed_batch_size</span><span class="p">]</span>
 
     <span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">EPOCHS</span><span class="p">):</span>
+        <span class="n">dataloader</span> <span class="o">=</span> <span class="n">get_dataloader</span><span class="p">(</span>
+            <span class="n">batch_size</span><span class="o">=</span><span class="n">BATCH_SIZE</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">current_epoch</span><span class="o">=</span><span class="n">epoch</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">epoch</span> <span class="o">%</span> <span class="mi">10</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">generator</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+            <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+                <span class="n">fake_checkpoint</span> <span class="o">=</span> <span class="n">generator</span><span class="p">(</span><span class="n">fixed_noise</span><span class="p">,</span> <span class="n">fixed_macro_guides</span><span class="p">)</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
+                <span class="n">elevation_only</span> <span class="o">=</span> <span class="n">fake_checkpoint</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:]</span>
+                <span class="n">vutils</span><span class="o">.</span><span class="n">save_image</span><span class="p">(</span>
+                    <span class="n">elevation_only</span><span class="p">,</span>
+                    <span class="sa">f</span><span class="s2">&quot;checkpoint_epoch_</span><span class="si">{</span><span class="n">epoch</span><span class="si">}</span><span class="s2">.png&quot;</span><span class="p">,</span>
+                    <span class="n">nrow</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+                    <span class="n">normalize</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">value_range</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">)</span>
+            <span class="n">generator</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+
         <span class="n">loop</span> <span class="o">=</span> <span class="n">tqdm</span><span class="p">(</span><span class="n">dataloader</span><span class="p">,</span> <span class="n">leave</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">batch_idx</span><span class="p">,</span> <span class="n">real_images</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">loop</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">batch_idx</span><span class="p">,</span> <span class="p">(</span><span class="n">real_images</span><span class="p">,</span> <span class="n">macro_guides</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">loop</span><span class="p">):</span>
             <span class="n">real_images</span> <span class="o">=</span> <span class="n">real_images</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+            <span class="n">macro_guides</span> <span class="o">=</span> <span class="n">macro_guides</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
             <span class="n">batch_size</span> <span class="o">=</span> <span class="n">real_images</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
 
             <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">CRITIC_ITERATIONS</span><span class="p">):</span>
                 <span class="n">noise</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="n">LATENT_DIM</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
-                <span class="n">fake_images</span> <span class="o">=</span> <span class="n">generator</span><span class="p">(</span><span class="n">noise</span><span class="p">)</span>
 
-                <span class="n">critic_real</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">real_images</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-                <span class="n">critic_fake</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">fake_images</span><span class="o">.</span><span class="n">detach</span><span class="p">())</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">fake_images</span> <span class="o">=</span> <span class="n">generator</span><span class="p">(</span><span class="n">noise</span><span class="p">,</span> <span class="n">macro_guides</span><span class="p">)</span>
 
-                <span class="n">gp</span> <span class="o">=</span> <span class="n">compute_gradient_penalty</span><span class="p">(</span><span class="n">critic</span><span class="p">,</span> <span class="n">real_images</span><span class="p">,</span> <span class="n">fake_images</span><span class="p">)</span>
+                <span class="n">critic_real</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">real_images</span><span class="p">,</span> <span class="n">macro_guides</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">critic_fake</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">fake_images</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span> <span class="n">macro_guides</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+                <span class="n">gp</span> <span class="o">=</span> <span class="n">compute_gradient_penalty</span><span class="p">(</span>
+                    <span class="n">critic</span><span class="p">,</span> <span class="n">real_images</span><span class="p">,</span> <span class="n">fake_images</span><span class="p">,</span> <span class="n">macro_guides</span>
+                <span class="p">)</span>
 
                 <span class="n">loss_critic</span> <span class="o">=</span> <span class="p">(</span>
-                    <span class="o">-</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">critic_real</span><span class="p">)</span> <span class="o">-</span> <span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">critic_fake</span><span class="p">))</span> 
+                    <span class="o">-</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">critic_real</span><span class="p">)</span> <span class="o">-</span> <span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">critic_fake</span><span class="p">))</span>
                     <span class="o">+</span> <span class="n">LAMBDA_GP</span> <span class="o">*</span> <span class="n">gp</span>
                 <span class="p">)</span>
 
@@ -186,8 +268,11 @@
                 <span class="n">loss_critic</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
                 <span class="n">opt_critic</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
 
-            <span class="n">output</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">fake_images</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-            <span class="n">loss_gen</span> <span class="o">=</span> <span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+            <span class="n">output</span> <span class="o">=</span> <span class="n">critic</span><span class="p">(</span><span class="n">fake_images</span><span class="p">,</span> <span class="n">macro_guides</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+            <span class="n">l1_penalty</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">l1_loss</span><span class="p">(</span><span class="n">fake_images</span><span class="p">,</span> <span class="n">real_images</span><span class="p">)</span>
+            <span class="n">LAMBDA_L1</span> <span class="o">=</span> <span class="mf">2.0</span>
+            <span class="n">loss_gen</span> <span class="o">=</span> <span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">output</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="n">LAMBDA_L1</span> <span class="o">*</span> <span class="n">l1_penalty</span><span class="p">)</span>
 
             <span class="n">generator</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
             <span class="n">loss_gen</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
@@ -196,18 +281,11 @@
             <span class="k">if</span> <span class="n">batch_idx</span> <span class="o">%</span> <span class="mi">50</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
                 <span class="n">loop</span><span class="o">.</span><span class="n">set_description</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Epoch [</span><span class="si">{</span><span class="n">epoch</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">EPOCHS</span><span class="si">}</span><span class="s2">]&quot;</span><span class="p">)</span>
                 <span class="n">loop</span><span class="o">.</span><span class="n">set_postfix</span><span class="p">(</span>
-                    <span class="n">Loss_Critic</span><span class="o">=</span><span class="n">loss_critic</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> 
-                    <span class="n">Loss_Gen</span><span class="o">=</span><span class="n">loss_gen</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+                    <span class="n">Loss_C</span><span class="o">=</span><span class="n">loss_critic</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span>
+                    <span class="n">Loss_G</span><span class="o">=</span><span class="n">loss_gen</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span>
+                    <span class="n">L1</span><span class="o">=</span><span class="n">l1_penalty</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span>
                 <span class="p">)</span>
-            <span class="k">if</span> <span class="n">epoch</span> <span class="o">%</span> <span class="mi">10</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-                <span class="n">generator</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
-                <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-                    <span class="n">fixed_noise</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="n">LATENT_DIM</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
-                    <span class="n">fake_checkpoint</span> <span class="o">=</span> <span class="n">generator</span><span class="p">(</span><span class="n">fixed_noise</span><span class="p">)</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
-                    <span class="n">elevation_only</span> <span class="o">=</span> <span class="n">fake_checkpoint</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:]</span> 
-                    <span class="n">vutils</span><span class="o">.</span><span class="n">save_image</span><span class="p">(</span><span class="n">elevation_only</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;checkpoint_epoch_</span><span class="si">{</span><span class="n">epoch</span><span class="si">}</span><span class="s2">.png&quot;</span><span class="p">,</span> <span class="n">nrow</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-                <span class="n">generator</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
-                
+
     <span class="k">return</span> <span class="n">generator</span><span class="p">,</span> <span class="n">critic</span></div>
 
 </pre></div>

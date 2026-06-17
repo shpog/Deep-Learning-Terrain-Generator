@@ -69,122 +69,231 @@
            <div itemprop="articleBody">
              
   <h1>Source code for src.dataset</h1><div class="highlight"><pre>
-<span></span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">Dataset and DataLoader definitions for the Terrain Generator.</span>
-
-<span class="sd">This module provides the PyTorch Dataset interface to stream training patches</span>
-<span class="sd">directly from the massive memory-mapped .npy file on the hard drive, ensuring</span>
-<span class="sd">local RAM is not overwhelmed during training.</span>
-<span class="sd">&quot;&quot;&quot;</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch.utils.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dataset</span><span class="p">,</span> <span class="n">DataLoader</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">config</span><span class="w"> </span><span class="kn">import</span> <span class="n">PROCESSED_DATA_DIR</span><span class="p">,</span> <span class="n">RESOLUTION</span><span class="p">,</span> <span class="n">TILE_SIZE</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">config</span><span class="w"> </span><span class="kn">import</span> <span class="n">PROCESSED_DATA_DIR</span><span class="p">,</span> <span class="n">RESOLUTION</span><span class="p">,</span> <span class="n">TILE_SIZE</span><span class="p">,</span> <span class="n">EPOCHS</span>
+
 
 <div class="viewcode-block" id="TerrainDataset">
 <a class="viewcode-back" href="../../src.html#src.dataset.TerrainDataset">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">TerrainDataset</span><span class="p">(</span><span class="n">Dataset</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    A PyTorch Dataset that randomly crops tiles from a global terrain map.</span>
-
-<span class="sd">    Because the dataset consists of a single massive continuous image rather </span>
-<span class="sd">    than thousands of separate files, this dataset ignores standard indexing </span>
-<span class="sd">    and instead returns a random geographical crop upon every fetch.</span>
-
-<span class="sd">    Attributes:</span>
-<span class="sd">        epoch_size (int): The number of patches that define one full training epoch.</span>
-<span class="sd">        filepath (pathlib.Path): The path to the processed .npy data file.</span>
-<span class="sd">        data (numpy.memmap): The memory-mapped global terrain array.</span>
-<span class="sd">        channels (int): Number of data channels (e.g., 3).</span>
-<span class="sd">        height (int): Total pixel height of the global map.</span>
-<span class="sd">        width (int): Total pixel width of the global map.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">epoch_size</span><span class="o">=</span><span class="mi">10000</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">epoch_size</span><span class="o">=</span><span class="mi">10000</span><span class="p">,</span> <span class="n">current_epoch</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Initializes the Dataset and opens the memory-mapped file.</span>
+<span class="sd">        A custom PyTorch Dataset for loading and pairing high-resolution terrain patches</span>
+<span class="sd">        with their corresponding low-resolution macro guides.</span>
 
-<span class="sd">        Args:</span>
-<span class="sd">            epoch_size (int, optional): Since we randomly crop from a continuous map, </span>
-<span class="sd">                &quot;length&quot; is arbitrary. This defines how many patches constitute </span>
-<span class="sd">                one full pass. Defaults to 10000.</span>
+<span class="sd">        This dataset loads preprocessed, memory-mapped numpy arrays. It features dynamic</span>
+<span class="sd">        filtering to reject overly flat or deep-ocean patches, with the rejection</span>
+<span class="sd">        probability scaling dynamically based on the current training epoch.</span>
+
+<span class="sd">        :param epoch_size: The number of patches to sample per epoch. Defaults to 10000.</span>
+<span class="sd">        :type epoch_size: int, optional</span>
+<span class="sd">        :param current_epoch: The current training epoch, used to calculate dynamic flatland rejection rates. Defaults to 0.</span>
+<span class="sd">        :type current_epoch: int, optional</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">epoch_size</span> <span class="o">=</span> <span class="n">epoch_size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_epoch</span> <span class="o">=</span> <span class="n">current_epoch</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">max_epochs</span> <span class="o">=</span> <span class="n">EPOCHS</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">filepath</span> <span class="o">=</span> <span class="n">PROCESSED_DATA_DIR</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;worldclim_</span><span class="si">{</span><span class="n">RESOLUTION</span><span class="si">}</span><span class="s2">_full.npy&quot;</span>
-        
-        <span class="n">temp_data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filepath</span><span class="p">,</span> <span class="n">mmap_mode</span><span class="o">=</span><span class="s1">&#39;r&#39;</span><span class="p">)</span>
+
+        <span class="n">temp_data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filepath</span><span class="p">,</span> <span class="n">mmap_mode</span><span class="o">=</span><span class="s2">&quot;r&quot;</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">channels</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">height</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">width</span> <span class="o">=</span> <span class="n">temp_data</span><span class="o">.</span><span class="n">shape</span>
-        <span class="k">del</span> <span class="n">temp_data</span> 
-        
+        <span class="k">del</span> <span class="n">temp_data</span>
+
         <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Returns the arbitrary size of the epoch.</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            int: The predefined epoch size.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">epoch_size</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Fetches a single random patch of size [TILE_SIZE, TILE_SIZE].</span>
+<span class="sd">        Retrieves a random, augmented high-resolution terrain patch and its corresponding macro guide.</span>
 
-<span class="sd">        This method actively filters out patches that consist entirely of ocean </span>
-<span class="sd">        (where elevation max is 0.0) to prevent the neural network from suffering </span>
-<span class="sd">        mode collapse on empty water tiles.</span>
+<span class="sd">        Samples random coordinates to extract a tile, applies dynamic filtering based on</span>
+<span class="sd">        elevation variance (delta) and mean, and performs random horizontal/vertical flips</span>
+<span class="sd">        for data augmentation. It then creates a downsampled macro guide using bilinear</span>
+<span class="sd">        and bicubic interpolation.</span>
 
-<span class="sd">        Args:</span>
-<span class="sd">            idx (int): The index requested by the PyTorch DataLoader. </span>
-<span class="sd">                (Note: This is ignored in favor of random spatial cropping).</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            torch.Tensor: A float32 tensor of shape [Channels, TILE_SIZE, TILE_SIZE].</span>
+<span class="sd">        :param idx: The index of the item (unused in implementation as sampling is random).</span>
+<span class="sd">        :type idx: int</span>
+<span class="sd">        :return: A tuple containing the high-resolution patch tensor and the downsampled macro guide tensor.</span>
+<span class="sd">        :rtype: tuple(torch.Tensor, torch.Tensor)</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filepath</span><span class="p">,</span> <span class="n">mmap_mode</span><span class="o">=</span><span class="s1">&#39;r&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filepath</span><span class="p">,</span> <span class="n">mmap_mode</span><span class="o">=</span><span class="s2">&quot;r&quot;</span><span class="p">)</span>
+
+        <span class="n">MIN_DELTA</span> <span class="o">=</span> <span class="mf">0.45</span>
+        <span class="n">MIN_MEAN</span> <span class="o">=</span> <span class="o">-</span><span class="mf">0.2</span>
+
+        <span class="n">flatland_keep_chance</span> <span class="o">=</span> <span class="mf">0.30</span> <span class="o">-</span> <span class="mf">0.25</span> <span class="o">*</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">current_epoch</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_epochs</span><span class="p">)</span>
 
         <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
             <span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">height</span> <span class="o">-</span> <span class="n">TILE_SIZE</span><span class="p">)</span>
             <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">width</span> <span class="o">-</span> <span class="n">TILE_SIZE</span><span class="p">)</span>
-            
-            <span class="n">patch_numpy</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[:,</span> <span class="n">y</span><span class="p">:</span><span class="n">y</span><span class="o">+</span><span class="n">TILE_SIZE</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span><span class="n">x</span><span class="o">+</span><span class="n">TILE_SIZE</span><span class="p">]</span>
-            
-            <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">patch_numpy</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">&gt;</span> <span class="mf">0.15</span><span class="p">:</span> 
+
+            <span class="n">patch_numpy</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[:,</span> <span class="n">y</span> <span class="p">:</span> <span class="n">y</span> <span class="o">+</span> <span class="n">TILE_SIZE</span><span class="p">,</span> <span class="n">x</span> <span class="p">:</span> <span class="n">x</span> <span class="o">+</span> <span class="n">TILE_SIZE</span><span class="p">]</span>
+            <span class="n">elevation</span> <span class="o">=</span> <span class="n">patch_numpy</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+            <span class="n">delta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">elevation</span><span class="p">)</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">elevation</span><span class="p">)</span>
+            <span class="n">mean_elev</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">elevation</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">mean_elev</span> <span class="o">&lt;</span> <span class="o">-</span><span class="mf">0.75</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="k">elif</span> <span class="n">delta</span> <span class="o">&lt;=</span> <span class="n">MIN_DELTA</span> <span class="ow">or</span> <span class="n">mean_elev</span> <span class="o">&lt;=</span> <span class="n">MIN_MEAN</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">rand</span><span class="p">()</span> <span class="o">&lt;</span> <span class="n">flatland_keep_chance</span><span class="p">:</span>
+                    <span class="k">break</span>
+
+            <span class="k">else</span><span class="p">:</span>
                 <span class="k">break</span>
-                
+
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">rand</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mf">0.5</span><span class="p">:</span>
+            <span class="n">patch_numpy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flip</span><span class="p">(</span><span class="n">patch_numpy</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">rand</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mf">0.5</span><span class="p">:</span>
+            <span class="n">patch_numpy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flip</span><span class="p">(</span><span class="n">patch_numpy</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+
         <span class="n">patch_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">patch_numpy</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
-        <span class="k">return</span> <span class="n">patch_tensor</span></div>
+
+        <span class="n">downscale_factor</span> <span class="o">=</span> <span class="mi">8</span>
+        <span class="n">macro_size</span> <span class="o">=</span> <span class="n">TILE_SIZE</span> <span class="o">//</span> <span class="n">downscale_factor</span>
+
+        <span class="n">patch_expanded</span> <span class="o">=</span> <span class="n">patch_tensor</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">downsampled</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span>
+            <span class="n">patch_expanded</span><span class="p">,</span>
+            <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="n">macro_size</span><span class="p">,</span> <span class="n">macro_size</span><span class="p">),</span>
+            <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;bilinear&quot;</span><span class="p">,</span>
+            <span class="n">align_corners</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">macro_tensor</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span>
+            <span class="n">downsampled</span><span class="p">,</span>
+            <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="n">TILE_SIZE</span><span class="p">,</span> <span class="n">TILE_SIZE</span><span class="p">),</span>
+            <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;bicubic&quot;</span><span class="p">,</span>
+            <span class="n">align_corners</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">patch_tensor</span><span class="p">,</span> <span class="n">macro_tensor</span></div>
+
 
 
 <div class="viewcode-block" id="get_dataloader">
 <a class="viewcode-back" href="../../src.html#src.dataset.get_dataloader">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">get_dataloader</span><span class="p">(</span><span class="n">batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_dataloader</span><span class="p">(</span><span class="n">batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">current_epoch</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Creates the PyTorch DataLoader for the TerrainDataset.</span>
+<span class="sd">    Instantiates and returns a PyTorch DataLoader for the TerrainDataset.</span>
 
-<span class="sd">    Args:</span>
-<span class="sd">        batch_size (int, optional): Number of patches per batch. Defaults to 32.</span>
-<span class="sd">        num_workers (int, optional): Subprocesses to use for data loading. </span>
-<span class="sd">            On multi-GPU clusters, higher values (e.g., 4 or 8) speed up fetching. </span>
-<span class="sd">            Defaults to 0.</span>
-
-<span class="sd">    Returns:</span>
-<span class="sd">        torch.utils.data.DataLoader: The configured PyTorch DataLoader.</span>
+<span class="sd">    :param batch_size: The number of samples per batch. Defaults to 32.</span>
+<span class="sd">    :type batch_size: int, optional</span>
+<span class="sd">    :param num_workers: The number of subprocesses to use for data loading. Defaults to 0.</span>
+<span class="sd">    :type num_workers: int, optional</span>
+<span class="sd">    :param current_epoch: The current training epoch to pass to the dataset for dynamic filtering. Defaults to 0.</span>
+<span class="sd">    :type current_epoch: int, optional</span>
+<span class="sd">    :return: A configured DataLoader yielding batches of (patch, macro_guide) pairs.</span>
+<span class="sd">    :rtype: torch.utils.data.DataLoader</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">dataset</span> <span class="o">=</span> <span class="n">TerrainDataset</span><span class="p">()</span>
-    
+
     <span class="n">dataloader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span>
-        <span class="n">dataset</span><span class="p">,</span> 
-        <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span> 
-        <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> 
+        <span class="n">dataset</span><span class="p">,</span>
+        <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+        <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="n">num_workers</span><span class="o">=</span><span class="n">num_workers</span><span class="p">,</span>
-        <span class="n">pin_memory</span><span class="o">=</span><span class="kc">True</span>
+        <span class="n">pin_memory</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
     <span class="p">)</span>
-    
+
     <span class="k">return</span> <span class="n">dataloader</span></div>
+
+
+
+<div class="viewcode-block" id="MacroDataset">
+<a class="viewcode-back" href="../../src.html#src.dataset.MacroDataset">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MacroDataset</span><span class="p">(</span><span class="n">Dataset</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">epoch_size</span><span class="o">=</span><span class="mi">5000</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        A custom PyTorch Dataset for loading low-resolution macro terrain patches.</span>
+
+<span class="sd">        This dataset is used for training the unconditional macro generator. It loads</span>
+<span class="sd">        preprocessed 10m-resolution memory-mapped numpy arrays and extracts random patches,</span>
+<span class="sd">        applying a basic variance filter to avoid completely flat areas.</span>
+
+<span class="sd">        :param epoch_size: The number of patches to sample per epoch. Defaults to 5000.</span>
+<span class="sd">        :type epoch_size: int, optional</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">epoch_size</span> <span class="o">=</span> <span class="n">epoch_size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">filepath</span> <span class="o">=</span> <span class="n">PROCESSED_DATA_DIR</span> <span class="o">/</span> <span class="s2">&quot;worldclim_10m_full.npy&quot;</span>
+
+        <span class="n">temp_data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filepath</span><span class="p">,</span> <span class="n">mmap_mode</span><span class="o">=</span><span class="s2">&quot;r&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">channels</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">height</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">width</span> <span class="o">=</span> <span class="n">temp_data</span><span class="o">.</span><span class="n">shape</span>
+        <span class="k">del</span> <span class="n">temp_data</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">epoch_size</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieves a random, augmented low-resolution macro terrain patch.</span>
+
+<span class="sd">        Samples random coordinates, ensures the patch has at least a minimal elevation</span>
+<span class="sd">        variance (or accepts it with a 10% random chance), applies random horizontal/vertical</span>
+<span class="sd">        flips, and returns the converted tensor.</span>
+
+<span class="sd">        :param idx: The index of the item (unused as sampling is random).</span>
+<span class="sd">        :type idx: int</span>
+<span class="sd">        :return: The augmented macro terrain patch tensor.</span>
+<span class="sd">        :rtype: torch.Tensor</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filepath</span><span class="p">,</span> <span class="n">mmap_mode</span><span class="o">=</span><span class="s2">&quot;r&quot;</span><span class="p">)</span>
+
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">height</span> <span class="o">-</span> <span class="n">TILE_SIZE</span><span class="p">)</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">width</span> <span class="o">-</span> <span class="n">TILE_SIZE</span><span class="p">)</span>
+
+            <span class="n">patch_numpy</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[:,</span> <span class="n">y</span> <span class="p">:</span> <span class="n">y</span> <span class="o">+</span> <span class="n">TILE_SIZE</span><span class="p">,</span> <span class="n">x</span> <span class="p">:</span> <span class="n">x</span> <span class="o">+</span> <span class="n">TILE_SIZE</span><span class="p">]</span>
+            <span class="n">elevation</span> <span class="o">=</span> <span class="n">patch_numpy</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+            <span class="n">delta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">elevation</span><span class="p">)</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">elevation</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">delta</span> <span class="o">&gt;</span> <span class="mf">0.1</span> <span class="ow">or</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">rand</span><span class="p">()</span> <span class="o">&lt;</span> <span class="mf">0.1</span><span class="p">:</span>
+                <span class="k">break</span>
+
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">rand</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mf">0.5</span><span class="p">:</span>
+            <span class="n">patch_numpy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flip</span><span class="p">(</span><span class="n">patch_numpy</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">rand</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mf">0.5</span><span class="p">:</span>
+            <span class="n">patch_numpy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flip</span><span class="p">(</span><span class="n">patch_numpy</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+
+        <span class="n">patch_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">patch_numpy</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">patch_tensor</span></div>
+
+
+
+<div class="viewcode-block" id="get_macro_dataloader">
+<a class="viewcode-back" href="../../src.html#src.dataset.get_macro_dataloader">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_macro_dataloader</span><span class="p">(</span><span class="n">batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Instantiates and returns a PyTorch DataLoader for the MacroDataset.</span>
+
+<span class="sd">    :param batch_size: The number of samples per batch. Defaults to 32.</span>
+<span class="sd">    :type batch_size: int, optional</span>
+<span class="sd">    :param num_workers: The number of subprocesses to use for data loading. Defaults to 0.</span>
+<span class="sd">    :type num_workers: int, optional</span>
+<span class="sd">    :return: A configured DataLoader yielding batches of macro terrain patches.</span>
+<span class="sd">    :rtype: torch.utils.data.DataLoader</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">dataset</span> <span class="o">=</span> <span class="n">MacroDataset</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">DataLoader</span><span class="p">(</span>
+        <span class="n">dataset</span><span class="p">,</span>
+        <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+        <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">num_workers</span><span class="o">=</span><span class="n">num_workers</span><span class="p">,</span>
+        <span class="n">pin_memory</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span></div>
 
 </pre></div>
 

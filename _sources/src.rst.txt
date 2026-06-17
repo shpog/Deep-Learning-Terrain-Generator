@@ -44,18 +44,18 @@ src.preprocessing module
    :undoc-members:
    :show-inheritance:
 
-src.training module
--------------------
+src.train\_macro module
+-----------------------
 
-.. automodule:: src.training
+.. automodule:: src.train_macro
    :members:
    :undoc-members:
    :show-inheritance:
 
-src.utils module
-----------------
+src.training module
+-------------------
 
-.. automodule:: src.utils
+.. automodule:: src.training
    :members:
    :undoc-members:
    :show-inheritance:
