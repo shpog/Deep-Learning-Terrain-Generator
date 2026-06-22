@@ -28,7 +28,7 @@ dev = [
     "pytest",
     "black",
     "sphinx",
-    "sphinx-rtd-theme"
+    "sphinx-rtd-theme",
     "quarto"
 ]
 
