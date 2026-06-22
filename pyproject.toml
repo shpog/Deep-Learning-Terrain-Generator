@@ -19,7 +19,7 @@ dependencies = [
     "matplotlib",
     "tqdm",
     "trame",
-    "pyvista"
+    "k3d"
 ]
 
 [project.optional-dependencies]
@@ -29,6 +29,7 @@ dev = [
     "black",
     "sphinx",
     "sphinx-rtd-theme"
+    "quarto"
 ]
 
 [tool.setuptools.packages.find]
