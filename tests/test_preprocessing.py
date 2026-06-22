@@ -8,10 +8,6 @@ sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
 from preprocessing import clean_and_normalize
 
 def test_clean_and_normalize():
-    """
-    Ensures NoData values are ignored during min/max scaling, 
-    and then filled with the specified fill_value.
-    """
     raw_array = np.array([
         [10.0,  20.0, -9999.0],
         [10.0,  30.0, -9999.0],
@@ -26,8 +22,10 @@ def test_clean_and_normalize():
     assert processed[0, 2] == 0.0
     assert processed[1, 2] == 0.0
     
-    assert processed[0, 0] == 0.0
+    assert processed[0, 0] == -1.0
     
     assert processed[1, 1] == 1.0
     
-    assert processed[0, 1] == 0.5
+    expected_mid_value = (np.sqrt(10.0) / np.sqrt(20.0)) * 2.0 - 1.0
+    
+    assert np.isclose(processed[0, 1], expected_mid_value), f"Expected {expected_mid_value}, got {processed[0, 1]}"
